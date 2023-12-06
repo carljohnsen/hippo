@@ -1,7 +1,14 @@
 import helpers
 import numpy as np
+import sys
 
 if __name__ == '__main__':
+    # TODO argparse?
+    outpath = sys.argv[1] if len(sys.argv) > 1 else 'data/input_img.uint8'
+
+    if not outpath.endswith('.uint8'):
+        print ('Warning: file will be saved as a raw uint8 file, but the extension is not .uint8')
+
     consts = helpers.parse_header('include/hippo.hpp')
 
     Nz = int(consts['Nz_total'])
@@ -11,12 +18,12 @@ if __name__ == '__main__':
     img = np.zeros((Nz, Ny, Nx), dtype=np.uint8)
 
     # Set the 1 pixel borders to 255
-    img[0, :, :] = 255
-    img[-1, :, :] = 255
-    img[:, 0, :] = 255
-    img[:, -1, :] = 255
-    img[:, :, 0] = 255
-    img[:, :, -1] = 255
+    img[ 0,  :,  :] = 255
+    img[-1,  :,  :] = 255
+    img[ :,  0,  :] = 255
+    img[ :, -1,  :] = 255
+    img[ :,  :,  0] = 255
+    img[ :,  :, -1] = 255
 
     # Set the square center of radius C to 255
     C = int(consts['C'])
@@ -40,4 +47,4 @@ if __name__ == '__main__':
     img[Nz//2-6*C:Nz//2-5*C, Ny//2, Nx//2-3*C:Nx//2+3*C] = 255
 
     # Save the image as a raw uint8 file
-    img.tofile('data/input_img.uint8')
+    img.tofile(outpath)

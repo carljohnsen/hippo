@@ -20,15 +20,21 @@ struct idx3d {
 typedef std::vector<std::unordered_set<int64_t>> mapping;
 
 // Constants
-// Out-of-core main memory parameters
 constexpr int64_t
-    Nz_global = 512,
-    Ny_global = 512,
-    Nx_global = 512,
-// Out-of-core GPU memory parameters
-    Nz_local = 128,
-    Ny_local = 128,
-    Nx_local = 128;
+    // On disk parameters for generated input
+    Nz_total = 64,
+    Ny_total = 64,
+    Nx_total = 64,
+    // Out-of-core main memory parameters
+    Nz_global = 32,
+    Ny_global = 32,
+    Nx_global = 32,
+    // Out-of-core GPU memory parameters
+    Nz_local = 16,
+    Ny_local = 16,
+    Nx_local = 16,
+    // Input image generation parameters
+    C = 4;
 
 // Common functions
 

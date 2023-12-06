@@ -7,13 +7,21 @@ def parse_header(path):
     # just read them all and then pick the ones we want.
     consts = dict()
     with open(path, 'r') as f:
-        lines = [line for line in f.readlines() if line.startswith('#define')]
-        for line in lines:
-            line = line.strip()
+        lines = [line.strip() for line in f.readlines()]
+
+        defines = [line for line in lines if line.startswith('#define')]
+        for line in defines:
             line = line.replace('#define ', '')
             tokens = line.split(' ')
             consts[tokens[0]] = tokens[-1]
 
+        assigns = [line for line in lines if '=' in line.split(' ')]
+        for line in assigns:
+            tokens = line.split(' ')
+            eq_sign = tokens.index('=')
+            consts[tokens[eq_sign-1]] = tokens[eq_sign+1].strip(',;')
+
+    print (consts)
     return consts
 
 def plot_middle_planes(inpath, shape, dtype, outpath):
