@@ -14,7 +14,7 @@
 #include <vector>
 
 // Custom datatypes
-struct dim3 {
+struct idx3d {
     int64_t z, y, x;
 };
 typedef std::vector<std::unordered_set<int64_t>> mapping;

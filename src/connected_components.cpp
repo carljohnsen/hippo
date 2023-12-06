@@ -9,10 +9,10 @@ void apply_renaming(std::vector<int64_t> &img, std::vector<int64_t> &to_rename) 
     }
 }
 
-std::vector<dim3> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
+std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
     std::unordered_set<int64_t> labels;
     std::vector<bool> found(n_labels+1, false);
-    std::vector<dim3> names(n_labels+1, {-1, -1, -1});
+    std::vector<idx3d> names(n_labels+1, {-1, -1, -1});
     for (int64_t i = 0; i < img.size(); i++) {
         labels.insert(img[i]);
         if (img[i] != 0 && !found[img[i]]) {
@@ -54,8 +54,8 @@ std::vector<int64_t> get_sizes(std::vector<int64_t> &img, int64_t n_labels) {
     return sizes;
 }
 
-std::vector<dim3> merge_canonical_names(std::vector<dim3> &names_a, std::vector<dim3> &names_b) {
-    std::vector<dim3> names(names_a.size());
+std::vector<idx3d> merge_canonical_names(std::vector<idx3d> &names_a, std::vector<idx3d> &names_b) {
+    std::vector<idx3d> names(names_a.size());
     for (int64_t i = 1; i < names_a.size(); i++) {
         if (names_a[i].z == -1) {
             names[i] = names_b[i];
@@ -105,7 +105,7 @@ std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::v
     return to_rename_a;
 }
 
-void print_canonical_names(std::vector<dim3> &names_a) {
+void print_canonical_names(std::vector<idx3d> &names_a) {
     std::cout << "Canonical names:" << std::endl;
     for (int64_t i = 1; i < names_a.size(); i++) {
         std::cout << i << ": " << names_a[i].z << " " << names_a[i].y << " " << names_a[i].x << std::endl;
