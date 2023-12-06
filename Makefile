@@ -1,0 +1,1 @@
+CLFLAGS=-O3 -Wall -Wextra -Werror -pedantic -std=c++20 -O3 -march=native -mtune=native -fopenmp
