@@ -21,17 +21,22 @@ typedef std::vector<std::unordered_set<int64_t>> mapping;
 
 // Constants
 // Out-of-core main memory parameters
-#define Nz_global 512
-#define Ny_global 512
-#define Nx_global 512
+constexpr int64_t
+    Nz_global = 512,
+    Ny_global = 512,
+    Nx_global = 512,
 // Out-of-core GPU memory parameters
-#define Nz_local 128
-#define Ny_local 128
-#define Nx_local 128
+    Nz_local = 128,
+    Ny_local = 128,
+    Nx_local = 128;
 
 // Common functions
+
+// Loads `n_elements` of a file located at `path` on disk at `offset` elements from the beginning of the file, into a vector of type `T`.
 template <typename T>
 std::vector<T> load_file(std::string &path, int64_t offset, int64_t n_elements);
+
+// Stores `data.size()` elements of `data` into a file located at `path` on disk at `offset` elements from the beginning of the file.
 template <typename T>
 void store_file(std::string &path, std::vector<T> &data, int64_t offset);
 
