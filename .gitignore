@@ -2,3 +2,4 @@ data/
 output/
 obj/
 bin/
+**/__pycache__/
