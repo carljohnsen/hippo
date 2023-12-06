@@ -1,14 +1,18 @@
-#ifndef hippo_hpp
-#define hippo_hpp
+#ifndef HIPPO_HPP
+#define HIPPO_HPP
 
 // Includes
+//#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <list>
+#include <omp.h>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
@@ -16,6 +20,9 @@
 // Custom datatypes
 struct idx3d {
     int64_t z, y, x;
+};
+struct idx3drange {
+    int64_t z_start, z_end, y_start, y_end, x_start, x_end;
 };
 typedef std::vector<std::unordered_set<int64_t>> mapping;
 
@@ -46,4 +53,4 @@ std::vector<T> load_file(std::string &path, int64_t offset, int64_t n_elements);
 template <typename T>
 void store_file(std::string &path, std::vector<T> &data, int64_t offset);
 
-#endif /* hippo_hpp */
+#endif // HIPPO_HPP

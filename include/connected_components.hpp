@@ -1,5 +1,5 @@
-#ifndef cc_hpp
-#define cc_hpp
+#ifndef CC_HPP
+#define CC_HPP
 
 #include "hippo.hpp"
 
@@ -20,4 +20,4 @@ void print_canonical_names(std::vector<idx3d> &names_a);
 void print_mapping(mapping &mapping_);
 void print_rename(std::vector<int64_t> &to_rename);
 
-#endif /* cc_hpp */
+#endif // CC_HPP
