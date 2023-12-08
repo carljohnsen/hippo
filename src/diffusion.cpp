@@ -228,9 +228,9 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                 for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
                     // Read the block
                     const idx3drange global_range = {
-                        std::max((global_block_z*Nz_global)-R, (int64_t) 0), std::min((global_block_z+1)*Nz_global, Nz_total),
-                        std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global, Ny_total),
-                        std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global, Nx_total)
+                        std::max((global_block_z*Nz_global)-R, (int64_t) 0), std::min((global_block_z+1)*Nz_global+R, Nz_total),
+                        std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global+R, Ny_total),
+                        std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global+R, Nx_total)
                     };
 
                     // Ensure padding

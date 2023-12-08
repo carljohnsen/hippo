@@ -39,17 +39,17 @@ typedef uint16_t voxel_type;
 // Constants
 constexpr int64_t
     // On disk parameters for generated input
-    Nz_total = 64,
-    Ny_total = 64,
-    Nx_total = 64,
+    Nz_total = 128,
+    Ny_total = 128,
+    Nx_total = 128,
     // Out-of-core main memory parameters
-    Nz_global = 32,
-    Ny_global = 32,
-    Nx_global = 32,
+    Nz_global = 64,
+    Ny_global = 64,
+    Nx_global = 64,
     // Out-of-core GPU memory parameters
-    Nz_local = 16,
-    Ny_local = 16,
-    Nx_local = 16,
+    Nz_local = 32,
+    Ny_local = 32,
+    Nx_local = 32,
     // Input image generation parameters
     C = 4;
 

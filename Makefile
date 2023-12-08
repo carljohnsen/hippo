@@ -1,4 +1,4 @@
-CXXFLAGS=-O3 -Wall -Wextra -Werror -pedantic -std=c++20 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC
+CXXFLAGS=-Wall -Wextra -Werror -pedantic -std=c++20 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC -g
 PYTHON=python3.10
 PYBIND_FLAGS=$(shell $(PYTHON) -m pybind11 --includes)
 #CXXFLAGS+=$(PYBIND_FLAGS)
@@ -18,6 +18,7 @@ obj/%.o: src/%.cpp
 	g++ $(CXXFLAGS) -c -o $@ $<
 
 generate_data:
+	@mkdir -p output
 	python3 scripts/generate_data.py output/input_img.uint8
 
 clean:

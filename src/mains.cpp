@@ -4,8 +4,8 @@
 
 void verify_diffusion() {
     assert(R < Nx_total && R < Ny_total && R < Nz_total && "R must be smaller than the total block size");
-    assert(R < Nx_local && R < Ny_local && R < Nz_local && "R must be smaller than the local block size");
     assert(R < Nx_global && R < Ny_global && R < Nz_global && "R must be smaller than the global block size");
+    assert(R < Nx_local && R < Ny_local && R < Nz_local && "R must be smaller than the local block size");
 
     // Define the vectors
     std::vector<float> kernel(R*2+1);
