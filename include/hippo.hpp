@@ -74,6 +74,15 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape,
 
 // Stores `data.size()` elements of `data` into a file located at `path` on disk at `offset` elements from the beginning of the file.
 template <typename T>
-void store_file(std::string &path, std::vector<T> &data, int64_t offset);
+void store_file(const std::vector<T> &data, const std::string &path, const int64_t offset);
+
+template <typename T>
+void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements);
+
+template <typename T>
+void store_file_strided(const std::vector<T> &data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+
+template <typename T>
+void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
 
 #endif // HIPPO_HPP

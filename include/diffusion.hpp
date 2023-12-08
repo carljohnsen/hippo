@@ -29,6 +29,5 @@ void illuminate(bool *mask, float *output);
 void store_mask(float *input, bool *mask);
 void stage_to_device(float *stage, float *src, idx3drange &range);
 void stage_to_host(float *dst, float *stage, idx3drange &range);
-void write_block(float *src, std::string &path, idx3drange &range);
 
 #endif // DIFFUSION_HPP

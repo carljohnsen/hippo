@@ -118,53 +118,6 @@ void stage_to_host(float *dst, float *stage, idx3drange &range) {
     }
 }
 
-void write_block(float *src, std::string &path, idx3drange &range) {
-    auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
-    end_z  = std::min(end_z+R, Nz_total);
-    end_y  = std::min(end_y+R, Ny_total);
-    end_x  = std::min(end_x+R, Nx_total);
-    const int64_t
-        size_z = end_z - start_z,
-        size_y = end_y - start_y,
-        size_x = end_x - start_x,
-        offset_z = R,
-        offset_y = R,
-        offset_x = R,
-        global_strides[3] = {Ny_total*Nx_total, Nx_total, 1},
-        local_strides[3] = {(Nz_global+2*R)*(Nx_global+2*R), Nx_global+2*R, 1};
-
-    // Start timing
-    auto start = std::chrono::high_resolution_clock::now();
-
-    std::ios::openmode mode = std::ios::binary;
-    // If file exists, append in mode
-    if (std::filesystem::exists(path)) {
-        mode |= std::ios::in;
-    }
-
-    std::ofstream file(path, mode);
-    file.seekp(start_z*global_strides[0]*sizeof(float) + start_y*global_strides[1]*sizeof(float) + start_x*global_strides[2]*sizeof(float));
-
-    std::vector<float> chunk = std::vector<float>(size_x);
-
-    for (int64_t z = 0; z < size_z; z++) {
-        for (int64_t y = 0; y < size_y; y++) {
-            for (int64_t x = 0; x < size_x; x++) {
-                chunk[x] = src[(offset_z+z)*local_strides[0] + (offset_y+y)*local_strides[1] + (offset_x+x)];
-            }
-            file.write((char *) &chunk[0], size_x*sizeof(float));
-            file.seekp((global_strides[1] - size_x)*sizeof(float), std::ios::cur);
-        }
-        file.seekp((global_strides[0] - size_y*global_strides[1])*sizeof(float), std::ios::cur);
-    }
-    file.close();
-
-    // End timing
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Writing took " << duration.count() << " seconds at " << (size_z*size_y*size_x*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
-}
-
 void convert_float_to_uint8(std::string &src, std::string &dst) {
     const int64_t chunk_size = 4096;
 
@@ -240,7 +193,9 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
         local_blocks_y = std::ceil((Ny_global+2*R) / (float)Ny_local),
         local_blocks_x = std::ceil((Nx_global+2*R) / (float)Nx_local);
 
-    const idx3d global_shape = {Nz_total, Ny_total, Nx_total};
+    const idx3d
+        total_shape = {Nz_total, Ny_total, Nx_total},
+        global_shape = {Nz_global+2*R, Ny_global+2*R, Nx_global+2*R};
 
     std::cout << "Local flat size allocation is " << LOCAL_FLAT_SIZE*sizeof(float) << " bytes" << std::endl;
 
@@ -281,7 +236,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                     // Ensure padding
                     memset(input, 0, GLOBAL_FLAT_SIZE*sizeof(float));
 
-                    load_file_strided(input, iter_input, global_shape, global_range);
+                    load_file_strided(input, iter_input, total_shape, global_shape, global_range);
 
                     //#pragma omp parallel for schedule(static) collapse(3)
                     for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
@@ -312,7 +267,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                         }
                     }
 
-                    write_block(output, iter_output, global_range);
+                    load_file_strided(output, iter_output, total_shape, global_shape, global_range);
                 }
             }
         }
