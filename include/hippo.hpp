@@ -14,9 +14,10 @@
 #include <iostream>
 #include <list>
 #include <omp.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>
+// TODO pybind11 later on :)
+//#include <pybind11/pybind11.h>
+//#include <pybind11/stl.h>
+//#include <pybind11/numpy.h>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
@@ -30,8 +31,9 @@ struct idx3drange {
     int64_t z_start, z_end, y_start, y_end, x_start, x_end;
 };
 typedef std::vector<std::unordered_set<int64_t>> mapping;
-template <typename T>
-using np_array = pybind11::array_t<T, pybind11::array::c_style | pybind11::array::forcecast>;
+// TODO pybind11 later on :)
+//template <typename T>
+//using np_array = pybind11::array_t<T, pybind11::array::c_style | pybind11::array::forcecast>;
 typedef uint16_t voxel_type;
 
 // Constants
@@ -72,6 +74,12 @@ std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shap
 template <typename T>
 void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
 
+// Returns the mean of the given data
+float mean(const std::vector<float> &data);
+
+// Returns the standard deviation of the given data
+float stddev(const std::vector<float> &data);
+
 // Stores `data.size()` elements of `data` into a file located at `path` on disk at `offset` elements from the beginning of the file.
 template <typename T>
 void store_file(const std::vector<T> &data, const std::string &path, const int64_t offset);
@@ -84,5 +92,8 @@ void store_file_strided(const std::vector<T> &data, const std::string &path, con
 
 template <typename T>
 void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+
+// Writes the given 2D floating point array (between 0.0 and 1.0) to a PGM file
+void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height);
 
 #endif // HIPPO_HPP

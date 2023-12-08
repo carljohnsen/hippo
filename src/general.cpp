@@ -14,7 +14,8 @@ void load_file(T *dst, const std::string &path, const int64_t offset, const int6
     int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
     fp = fdopen(fd, "rb");
     fseek(fp, offset*sizeof(T), SEEK_SET);
-    fread((char *) dst, sizeof(T), n_elements, fp);
+    int64_t n = fread((char *) dst, sizeof(T), n_elements, fp);
+    assert(n == n_elements && "Failed to read all elements");
     fclose(fp);
 }
 
@@ -43,7 +44,8 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape,
     fseek(fp, range.z_start*strides_global.z + range.y_start*strides_global.y + range.x_start*strides_global.x*sizeof(T), SEEK_SET);
     for (int64_t z = 0; z < shape.z; z++) {
         for (int64_t y = 0; y < shape.y; y++) {
-            fread((char *) &dst[z*strides_local.z + y*strides_local.y], sizeof(T), shape.x, fp);
+            int64_t n = fread((char *) &dst[z*strides_local.z + y*strides_local.y], sizeof(T), shape.x, fp);
+            assert(n == shape.x && "Failed to read all elements");
             fseek(fp, (strides_global.y - shape.x)*sizeof(T), SEEK_CUR);
         }
         fseek(fp, (strides_global.y - shape.y)*strides_global.y*sizeof(T), SEEK_CUR);
@@ -51,8 +53,27 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape,
     fclose(fp);
 }
 
+// Returns the mean of the given data
+float mean(const std::vector<float>& data) {
+    float sum = 0.0;
+    for (int64_t i = 0; i < (int64_t) data.size(); i++) {
+        sum += data[i];
+    }
+    return sum / data.size();
+}
+
+// Returns the standard deviation of the given data
+float stddev(const std::vector<float>& data) {
+    float m = mean(data);
+    float sum = 0.0;
+    for (int64_t i = 0; i < (int64_t) data.size(); i++) {
+        sum += std::pow(data[i] - m, 2.0);
+    }
+    return std::sqrt(sum / data.size());
+}
+
 template <typename T>
-void store_file(std::vector<T> &data, std::string &path, int64_t offset) {
+void store_file(const std::vector<T> &data, const std::string &path, const int64_t offset) {
     std::ofstream file;
     file.open(path, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
@@ -60,13 +81,13 @@ void store_file(std::vector<T> &data, std::string &path, int64_t offset) {
         file.open(path, std::ios::binary | std::ios::out);
     }
     file.seekp(offset*sizeof(T), std::ios::beg);
-    file.write(reinterpret_cast<char*>(data.data()), data.size()*sizeof(T));
+    file.write(reinterpret_cast<const char*>(data.data()), data.size()*sizeof(T));
     file.flush();
     file.close();
 }
 
 template <typename T>
-void store_file(T *data, std::string &path, int64_t offset, int64_t n_elements) {
+void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements) {
     FILE *fp;
     int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     fp = fdopen(fd, "r+b");
@@ -104,3 +125,25 @@ void store_file_strided(const T *data, const std::string &path, const idx3d &dis
     }
     fclose(fp);
 }
+
+void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height) {
+    std::ofstream file(filename);
+    file << "P2\n" << width << " " << height << "\n255\n";
+    for (int64_t i = 0; i < height; i++) {
+        for (int64_t j = 0; j < width; j++) {
+            file << (int64_t) (data[i*width + j] * 255) << " ";
+        }
+        file << "\n";
+    }
+    file.close();
+}
+
+// Explicit instantiations
+template std::vector<float> load_file<float>(const std::string &path, const int64_t offset, const int64_t n_elements);
+template std::vector<uint8_t> load_file<uint8_t>(const std::string &path, const int64_t offset, const int64_t n_elements);
+template std::vector<float> load_file_strided<float>(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+template std::vector<uint8_t> load_file_strided<uint8_t>(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+template void store_file<float>(const std::vector<float> &data, const std::string &path, const int64_t offset);
+template void store_file<uint8_t>(const std::vector<uint8_t> &data, const std::string &path, const int64_t offset);
+template void store_file<float>(const float *data, const std::string &path, const int64_t offset, const int64_t n_elements);
+template void store_file<uint8_t>(const uint8_t *data, const std::string &path, const int64_t offset, const int64_t n_elements);
