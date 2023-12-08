@@ -1,7 +1,5 @@
 #include "histograms.hpp"
 
-// TODO for consistency, convert to OMP offload
-
 void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
                             const std::tuple<uint64_t,uint64_t,uint64_t> offset,
                             //const uint64_t outside_block_size,

@@ -1,7 +1,5 @@
 #include "diffusion.hpp"
 
-// TODO for consistency, convert to OMP offload
-
 void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
     // Måske er det de her ranges (som er nice i open acc), der goer at det ikke koerer hurtigt? Altsaa at cuda launcher flere blokke end der er data?
     // Ellers: 3d kernels er hurtigere end fladt paa dpcpp, saa maaske er det ogsaa tilfaeldet her?
