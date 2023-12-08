@@ -1,4 +1,4 @@
-CXXFLAGS=-O3 -Wall -Wextra -Werror -pedantic -std=c++20 -O3 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC
+CXXFLAGS=-O3 -Wall -Wextra -Werror -pedantic -std=c++20 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC
 PYTHON=python3.10
 PYBIND_FLAGS=$(shell $(PYTHON) -m pybind11 --includes)
 CXXFLAGS+=$(PYBIND_FLAGS)
