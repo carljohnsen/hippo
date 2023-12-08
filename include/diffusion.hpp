@@ -26,7 +26,6 @@ void convert_uint8_to_float(std::string &src, std::string &dst);
 void diffusion(std::string &input_file, std::vector<float>& kernel, std::string &output_file);
 void diffusion_core(float *input, float *kernel, float *output, int64_t dim);
 void illuminate(bool *mask, float *output);
-void read_block(float *dst, std::string &path, idx3drange &range);
 void store_mask(float *input, bool *mask);
 void stage_to_device(float *stage, float *src, idx3drange &range);
 void stage_to_host(float *dst, float *stage, idx3drange &range);

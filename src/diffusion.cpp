@@ -118,48 +118,6 @@ void stage_to_host(float *dst, float *stage, idx3drange &range) {
     }
 }
 
-void read_block(float *dst, std::string &path, idx3drange &range) {
-    auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
-    start_z = std::max(start_z-R, (int64_t) 0);
-    start_y = std::max(start_y-R, (int64_t) 0);
-    start_x = std::max(start_x-R, (int64_t) 0);
-    end_z   = std::min(end_z+R, Nz_total);
-    end_y   = std::min(end_y+R, Ny_total);
-    end_x   = std::min(end_x+R, Nx_total);
-    const int64_t
-        size_z = end_z - start_z,
-        size_y = end_y - start_y,
-        size_x = end_x - start_x,
-        offset_z = start_z == 0 ? R : 0,
-        offset_y = start_y == 0 ? R : 0,
-        offset_x = start_x == 0 ? R : 0,
-        global_strides[3] = {Ny_total*Nx_total, Nx_total, 1},
-        local_strides[3] = {(Ny_global+2*R)*(Nx_global+2*R), Nx_global+2*R, 1};
-
-    // Set to zero to ensure padding
-    memset(dst, 0, (Nz_global+2*R)*(Ny_global+2*R)*(Nx_global+2*R)*sizeof(float));
-
-    // Start timing
-    auto start = std::chrono::high_resolution_clock::now();
-
-    std::ifstream file(path, std::ios::binary);
-    file.seekg((start_z*global_strides[0] + start_y*global_strides[1] + start_x*global_strides[2])*sizeof(float));
-
-    for (int64_t z = 0; z < size_z; z++) {
-        for (int64_t y = 0; y < size_y; y++) {
-            file.read((char *) &dst[(offset_z+z)*local_strides[0] + (offset_y+y)*local_strides[1] + (offset_x)], size_x*sizeof(float));
-            file.seekg((global_strides[1] - size_x)*sizeof(float), std::ios::cur);
-        }
-        file.seekg((global_strides[0] - size_y*global_strides[1])*sizeof(float), std::ios::cur);
-    }
-    file.close();
-
-    // End timing
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Reading took " << duration.count() << " seconds at " << (size_z*size_y*size_x*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
-}
-
 void write_block(float *src, std::string &path, idx3drange &range) {
     auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
     end_z  = std::min(end_z+R, Nz_total);
@@ -282,6 +240,8 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
         local_blocks_y = std::ceil((Ny_global+2*R) / (float)Ny_local),
         local_blocks_x = std::ceil((Nx_global+2*R) / (float)Nx_local);
 
+    const idx3d global_shape = {Nz_total, Ny_total, Nx_total};
+
     std::cout << "Local flat size allocation is " << LOCAL_FLAT_SIZE*sizeof(float) << " bytes" << std::endl;
 
     // Print the number of blocks
@@ -312,13 +272,16 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
             for (int64_t global_block_y = 0; global_block_y < global_blocks_y; global_block_y++) {
                 for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
                     // Read the block
-                    idx3drange global_range = {
-                        global_block_z*Nz_global, (global_block_z+1)*Nz_global,
-                        global_block_y*Ny_global, (global_block_y+1)*Ny_global,
-                        global_block_x*Nx_global, (global_block_x+1)*Nx_global
+                    const idx3drange global_range = {
+                        std::max((global_block_z*Nz_global)-R, (int64_t) 0), std::min((global_block_z+1)*Nz_global, Nz_total),
+                        std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global, Ny_total),
+                        std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global, Nx_total)
                     };
 
-                    read_block(input, iter_input, global_range);
+                    // Ensure padding
+                    memset(input, 0, GLOBAL_FLAT_SIZE*sizeof(float));
+
+                    load_file_strided(input, iter_input, global_shape, global_range);
 
                     //#pragma omp parallel for schedule(static) collapse(3)
                     for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {

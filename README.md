@@ -1,6 +1,8 @@
 # hippo-ischpc24
 Artefact repository for HIPPO paper submission for ISC High Performance 2024
 
+TODO define hierachy shapes: total, global and local.
+
 # Quickstart
 ```bash
 make -j benchmarks
