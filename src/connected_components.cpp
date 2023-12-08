@@ -2,8 +2,8 @@
 
 void apply_renaming(std::vector<int64_t> &img, std::vector<int64_t> &to_rename) {
     #pragma omp parallel for
-    for (int64_t i = 0; i < img.size(); i++) {
-        if (img[i] < to_rename.size()) {
+    for (int64_t i = 0; i < (int64_t) img.size(); i++) {
+        if (img[i] < (int64_t) to_rename.size()) {
             img[i] = to_rename[img[i]];
         }
     }
@@ -13,7 +13,7 @@ std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
     std::unordered_set<int64_t> labels;
     std::vector<bool> found(n_labels+1, false);
     std::vector<idx3d> names(n_labels+1, {-1, -1, -1});
-    for (int64_t i = 0; i < img.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) img.size(); i++) {
         labels.insert(img[i]);
         if (img[i] != 0 && !found[img[i]]) {
             int64_t
@@ -47,7 +47,7 @@ std::tuple<mapping, mapping> get_mappings(std::vector<int64_t> &a, int64_t n_lab
 
 std::vector<int64_t> get_sizes(std::vector<int64_t> &img, int64_t n_labels) {
     std::vector<int64_t> sizes(n_labels, 0);
-    for (int64_t i = 0; i < img.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) img.size(); i++) {
         sizes[img[i]]++;
     }
 
@@ -56,7 +56,7 @@ std::vector<int64_t> get_sizes(std::vector<int64_t> &img, int64_t n_labels) {
 
 std::vector<idx3d> merge_canonical_names(std::vector<idx3d> &names_a, std::vector<idx3d> &names_b) {
     std::vector<idx3d> names(names_a.size());
-    for (int64_t i = 1; i < names_a.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) names_a.size(); i++) {
         if (names_a[i].z == -1) {
             names[i] = names_b[i];
         } else {
@@ -71,7 +71,7 @@ std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::v
     std::list<int64_t> to_check;
     std::vector<int64_t> to_rename_a(mapping_a.size());
     to_rename_a[0] = 0;
-    for (int64_t i = 1; i < mapping_a.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_a.size(); i++) {
         to_check.push_back(i);
         to_rename_a[i] = i;
     }
@@ -81,7 +81,7 @@ std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::v
         int64_t label_a = to_check.front();
         std::unordered_set<int64_t> others_a = mapping_a[label_a];
         for (int64_t label_b : others_a) {
-            if (label_b < to_rename_b.size()) { // Initially, the mapping will be empty
+            if (label_b < (int64_t) to_rename_b.size()) { // Initially, the mapping will be empty
                 label_b = to_rename_b[label_b];
             }
             std::unordered_set<int64_t> others_b = mapping_b[label_b];
@@ -107,7 +107,7 @@ std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::v
 
 void print_canonical_names(std::vector<idx3d> &names_a) {
     std::cout << "Canonical names:" << std::endl;
-    for (int64_t i = 1; i < names_a.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) names_a.size(); i++) {
         std::cout << i << ": " << names_a[i].z << " " << names_a[i].y << " " << names_a[i].x << std::endl;
     }
     std::cout << "----------------" << std::endl;
@@ -115,7 +115,7 @@ void print_canonical_names(std::vector<idx3d> &names_a) {
 
 void print_mapping(mapping &mapping_) {
     std::cout << "Mapping:" << std::endl;
-    for (int64_t i = 1; i < mapping_.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_.size(); i++) {
         std::cout << i << ": { ";
         for (int64_t entry : mapping_[i]) {
             std::cout << entry << " ";
@@ -127,7 +127,7 @@ void print_mapping(mapping &mapping_) {
 
 void print_rename(std::vector<int64_t> &to_rename) {
     std::cout << "Rename:" << std::endl;
-    for (int64_t i = 1; i < to_rename.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) to_rename.size(); i++) {
         std::cout << i << ": " << to_rename[i] << std::endl;
     }
     std::cout << "----------------" << std::endl;
@@ -138,7 +138,7 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
     // We assume that mapping includes 0
     std::vector<int64_t> mapped_a, unmapped_a, unmapped_b;
     int64_t popped_a = 0, popped_b = 0;
-    for (int64_t i = 1; i < mapping_a.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_a.size(); i++) {
         if (mapping_a[i].size() == 0) {
             unmapped_a.push_back(i);
         } else if (!mapping_a[i].contains(-1)) {
@@ -147,7 +147,7 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
             popped_a++;
         }
     }
-    for (int64_t i = 1; i < mapping_b.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_b.size(); i++) {
         if (mapping_b[i].size() == 0) {
             unmapped_b.push_back(i);
         } else if (mapping_b[i].contains(-1)) {
@@ -160,22 +160,22 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
 
     // Assign the first mapped_a labels to start from 1
     std::vector<int64_t> new_rename_a(mapping_a.size());
-    for (int64_t i = 0; i < mapped_a.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) mapped_a.size(); i++) {
         new_rename_a[mapped_a[i]] = i+1;
     }
     // Assign the unmapped_a labels to start from mapped_a.size()+1
-    for (int64_t i = 0; i < unmapped_a.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) unmapped_a.size(); i++) {
         new_rename_a[unmapped_a[i]] = i+1+mapped_a.size();
     }
 
     // Apply the new renaming to the renaming LUT
-    for (int64_t i = 0; i < to_rename_a.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) to_rename_a.size(); i++) {
         to_rename_a[i] = new_rename_a[to_rename_a[i]];
     }
 
     // TODO is this actually necessary? We'll see.
     // Update mapping b to use the new a labels
-    for (int64_t i = 1; i < mapping_b.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_b.size(); i++) {
         auto entries = mapping_b[i];
         std::unordered_set<int64_t> new_entries;
         for (int64_t entry : entries) {
@@ -188,7 +188,7 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
 
     // Assign the first mapped_b labels to match the mapped_a labels
     std::vector<int64_t> new_rename_b(mapping_b.size());
-    for (int64_t i = 0; i < mapped_a.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) mapped_a.size(); i++) {
         auto label = mapped_a[i];
         auto new_label = to_rename_a[label];
         auto entries = mapping_a[label];
@@ -199,11 +199,11 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
         }
     }
     // Assign the unmapped_b labels to start from 1+mapped_a.size()+unmapped_a.size()
-    for (int64_t i = 0; i < unmapped_b.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) unmapped_b.size(); i++) {
         new_rename_b[unmapped_b[i]] = i+1+mapped_a.size()+unmapped_a.size();
     }
     // Apply the new renaming to the renaming LUT
-    for (int64_t i = 0; i < to_rename_b.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) to_rename_b.size(); i++) {
         to_rename_b[i] = new_rename_b[to_rename_b[i]];
     }
 
@@ -245,7 +245,7 @@ std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vec
 }
 
 void rename_mapping(mapping &mapping_a, std::vector<int64_t> &to_rename_other) {
-    for (int64_t i = 1; i < mapping_a.size(); i++) {
+    for (int64_t i = 1; i < (int64_t) mapping_a.size(); i++) {
         auto entries = mapping_a[i];
         std::unordered_set<int64_t> new_entries;
         for (int64_t entry : entries) {
