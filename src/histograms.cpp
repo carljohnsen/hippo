@@ -4,7 +4,7 @@
 
 void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
                             const std::tuple<uint64_t,uint64_t,uint64_t> offset,
-                            const uint64_t outside_block_size,
+                            //const uint64_t outside_block_size,
                             np_array<uint64_t> &np_x_bins,
                             np_array<uint64_t> &np_y_bins,
                             np_array<uint64_t> &np_z_bins,
@@ -43,8 +43,7 @@ void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
         *r_bins = (uint64_t*)r_info.ptr;
 
     auto [z_start, y_start, x_start] = offset;
-    uint64_t
-      z_end   = std::min(z_start+outside_block_size, Nz);
+    //uint64_t z_end   = std::min(z_start+outside_block_size, Nz);
 
     auto [vmin, vmax] = vrange;
     auto [cy, cx] = center;
@@ -57,22 +56,23 @@ void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
     if (n_iterations * block_size < image_length)
         n_iterations++;
 
-    uint64_t initial_block = std::min(image_length, block_size);
+    //uint64_t initial_block = std::min(image_length, block_size);
 
     if (verbose) {
-        printf("\nStarting %p: (vmin,vmax) = (%g,%g), (Nx,Ny,Nz,Nr) = (%ld,%ld,%ld,%ld)\n",voxels,vmin, vmax, Nx,Ny,Nz,Nr);
+        printf("\nStarting %p: (vmin,vmax) = (%g,%g), (Nx,Ny,Nz,Nr) = (%ld,%ld,%ld,%ld)\n", (void*) voxels,vmin, vmax, Nx,Ny,Nz,Nr);
         printf("Allocating result memory (%ld bytes (%.02f Mbytes))\n", memory_needed, memory_needed/1024./1024.);
         printf("Starting calculation\n");
         printf("Size of voxels is %ld bytes (%.02f Mbytes)\n", image_length * sizeof(voxel_type), (image_length * sizeof(voxel_type))/1024./1024.);
         printf("Blocksize is %ld bytes (%.02f Mbytes)\n", block_size * sizeof(voxel_type), (block_size * sizeof(voxel_type))/1024./1024.);
-        printf("Doing %d blocks\n", n_iterations);
+        printf("Doing %ld blocks\n", n_iterations);
         fflush(stdout);
     }
 
     auto start = std::chrono::steady_clock::now();
 
     // Copy the buffers to the GPU on entry and back to host on exit
-    #pragma acc data copy(x_bins[:Nx*voxel_bins], y_bins[:Ny*voxel_bins], z_bins[:Nz*voxel_bins], r_bins[:Nr*voxel_bins])
+    //#pragma acc data copy(x_bins[:Nx*voxel_bins], y_bins[:Ny*voxel_bins], z_bins[:Nz*voxel_bins], r_bins[:Nr*voxel_bins])
+    #pragma omp target data map(tofrom: x_bins[:Nx*voxel_bins], y_bins[Ny*voxel_bins], z_bins[:Nz*voxel_bins], r_bins[:Nr*voxel_bins])
     {
         // For each block
         for (uint64_t i = 0; i < n_iterations; i++) {
@@ -83,10 +83,12 @@ void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
             voxel_type *buffer = voxels + this_block_start;
 
             // Copy the block to the GPU
-            #pragma acc data copyin(buffer[:this_block_size])
+            //#pragma acc data copyin(buffer[:this_block_size])
+            #pragma omp target data map(to: buffer[:this_block_size])
             {
                 // Compute the block
-                #pragma acc parallel loop
+                //#pragma acc parallel loop
+                #pragma omp target teams distribute parallel for
                 for (uint64_t j = 0; j < this_block_size; j++) {
                     uint64_t flat_idx = i*block_size + j;
                     voxel_type voxel = buffer[j];
@@ -100,13 +102,17 @@ void axis_histogram_par_gpu(const np_array<voxel_type> np_voxels,
 
                         int64_t voxel_index = floor(static_cast<double>(voxel_bins-1) * ((voxel - vmin)/(vmax - vmin)) );
 
-                        #pragma acc atomic
+                        //#pragma acc atomic
+                        #pragma omp atomic
                         ++x_bins[x*voxel_bins + voxel_index];
-                        #pragma acc atomic
+                        //#pragma acc atomic
+                        #pragma omp atomic
                         ++y_bins[y*voxel_bins + voxel_index];
-                        #pragma acc atomic
+                        //#pragma acc atomic
+                        #pragma omp atomic
                         ++z_bins[z*voxel_bins + voxel_index];
-                        #pragma acc atomic
+                        //#pragma acc atomic
+                        #pragma omp atomic
                         ++r_bins[r*voxel_bins + voxel_index];
                     }
                 }
