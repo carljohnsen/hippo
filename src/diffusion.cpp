@@ -9,13 +9,15 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
     //#pragma acc parallel loop collapse(3) present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1]) //vector_length(32)
 
     //#pragma acc parallel present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1])
-    #pragma acc kernels present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1])
+    #pragma omp target data map(to: input[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1]) map(from: output[0:LOCAL_FLAT_SIZE])
+    //#pragma acc kernels present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1])
     {
-    #pragma acc loop independent
+    #pragma omp target teams distribute parallel for
+    //#pragma acc loop independent
     for (int64_t i = 0; i < Nz_local+2*R; i++) {
-        #pragma acc loop independent
+        //#pragma acc loop independent
         for (int64_t j = 0; j < Ny_local+2*R; j++) {
-            #pragma acc loop independent
+            //#pragma acc loop independent
             for (int64_t k = 0; k < Nx_local+2*R; k++) {
                 const int64_t
                     X[3] = {i, j, k},
@@ -28,7 +30,8 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
 
                 float sum = 0.0f;
                 //#pragma acc loop reduction(+:sum)
-                #pragma acc loop seq
+                //#pragma acc loop seq
+                #pragma omp parallel for simd reduction(+:sum)
                 for (int64_t r = -R; r <= R; r++) {
                     const int64_t input_index = output_index + r*stride[dim];
                     float val = r >= ranges[0] && r <= ranges[1] ? input[input_index] : 0.0f;
@@ -43,7 +46,8 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
 }
 
 void illuminate(bool *mask, float *output) {
-    #pragma acc parallel loop present(mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
+    //#pragma acc parallel loop present(mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
+    #pragma omp target teams distribute parallel for map(tofrom: mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
     for (int64_t i = 0; i < LOCAL_FLAT_SIZE; i++) {
         if (mask[i]) {
             output[i] = 1.0f;
@@ -52,7 +56,8 @@ void illuminate(bool *mask, float *output) {
 }
 
 void store_mask(float *input, bool *mask) {
-    #pragma acc parallel loop present(input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
+    //#pragma acc parallel loop present(input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
+    #pragma omp target teams distribute parallel for map(tofrom: input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
     for (int64_t i = 0; i < LOCAL_FLAT_SIZE; i++) {
         mask[i] = input[i] == 1.0f;
     }
@@ -299,7 +304,8 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
 
     //omp_set_num_threads(N_DEVICES*N_STREAMS);
 
-    #pragma acc enter data copyin(d_kernel[0:R*2+1])
+    //#pragma acc enter data copyin(d_kernel[0:R*2+1])
+    #pragma omp target enter data map(to: d_kernel[0:R*2+1])
     for (int64_t reps = 0; reps < REPITITIONS; reps++) {
         std::string
             iter_input  = reps % 2 == 0 ? temp0 : temp1,
@@ -329,7 +335,8 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                                 // Copy data to device
                                 stage_to_device(d_input, input, local_range);
 
-                                #pragma acc data copyin(d_input[0:LOCAL_FLAT_SIZE]) create(d_mask[0:LOCAL_FLAT_SIZE], d_output[0:LOCAL_FLAT_SIZE]) copyout(d_output[0:LOCAL_FLAT_SIZE])
+                                //#pragma acc data copyin(d_input[0:LOCAL_FLAT_SIZE]) create(d_mask[0:LOCAL_FLAT_SIZE], d_output[0:LOCAL_FLAT_SIZE]) copyout(d_output[0:LOCAL_FLAT_SIZE])
+                                #pragma omp target data map(to: d_input[0:LOCAL_FLAT_SIZE]) map(alloc: d_mask[0:LOCAL_FLAT_SIZE]) map(from: d_output[0:LOCAL_FLAT_SIZE])
                                 {
                                     store_mask(d_input, d_mask);
                                     diffusion_core(d_input,  d_kernel, d_output, 0);
