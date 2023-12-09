@@ -7,10 +7,10 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
     //#pragma acc parallel loop collapse(3) present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1]) //vector_length(32)
 
     //#pragma acc parallel present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1])
-    #pragma omp target data map(to: input[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1]) map(from: output[0:LOCAL_FLAT_SIZE])
+    //#pragma omp target data map(to: input[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1]) map(from: output[0:LOCAL_FLAT_SIZE])
     //#pragma acc kernels present(input[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE], kernel[0:R*2+1])
     {
-    #pragma omp target teams distribute parallel for
+    //#pragma omp target teams distribute parallel for
     //#pragma acc loop independent
     for (int64_t i = 0; i < Nz_local+2*R; i++) {
         //#pragma acc loop independent
@@ -29,7 +29,7 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
                 float sum = 0.0f;
                 //#pragma acc loop reduction(+:sum)
                 //#pragma acc loop seq
-                #pragma omp parallel for simd reduction(+:sum)
+                //#pragma omp parallel for simd reduction(+:sum)
                 for (int64_t r = -R; r <= R; r++) {
                     const int64_t input_index = output_index + r*stride[dim];
                     float val = r >= ranges[0] && r <= ranges[1] ? input[input_index] : 0.0f;
@@ -45,7 +45,7 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
 
 void illuminate(bool *mask, float *output) {
     //#pragma acc parallel loop present(mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
-    #pragma omp target teams distribute parallel for map(tofrom: mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
+    //#pragma omp target teams distribute parallel for map(tofrom: mask[0:LOCAL_FLAT_SIZE], output[0:LOCAL_FLAT_SIZE])
     for (int64_t i = 0; i < LOCAL_FLAT_SIZE; i++) {
         if (mask[i]) {
             output[i] = 1.0f;
@@ -55,7 +55,7 @@ void illuminate(bool *mask, float *output) {
 
 void store_mask(float *input, bool *mask) {
     //#pragma acc parallel loop present(input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
-    #pragma omp target teams distribute parallel for map(tofrom: input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
+    //#pragma omp target teams distribute parallel for map(tofrom: input[0:LOCAL_FLAT_SIZE], mask[0:LOCAL_FLAT_SIZE])
     for (int64_t i = 0; i < LOCAL_FLAT_SIZE; i++) {
         mask[i] = input[i] == 1.0f;
     }
@@ -156,20 +156,14 @@ void convert_uint8_to_float(std::string &src, std::string &dst) {
     auto start = std::chrono::high_resolution_clock::now();
 
     // Construct temp0 from the uint8 file
-    std::ifstream inf(src, std::ios::binary);
-    std::ofstream outf(dst, std::ios::binary);
-    std::vector<uint8_t> buffer0(chunk_size);
     std::vector<float> buffer1(chunk_size);
     for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += chunk_size) {
-        int64_t size = std::min((int64_t)chunk_size, TOTAL_FLAT_SIZE - chunk);
-        inf.read((char *) &buffer0[0], size);
-        for (int64_t i = 0; i < size; i++) {
+        std::vector<uint8_t> buffer0 = load_file<uint8_t>(src, chunk, chunk_size);
+        for (int64_t i = 0; i < (int64_t) buffer0.size(); i++) {
             buffer1[i] = buffer0[i] > 0 ? 1.0f : 0.0f; // Loading a mask.
         }
-        outf.write((char *) &buffer1[0], size*sizeof(float));
+        store_file(buffer1, dst, chunk);
     }
-    inf.close();
-    outf.close();
 
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
@@ -186,6 +180,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
 
     // Compute the number of global blocks
     const int64_t
+        disk_block_size = 4096,
         global_blocks_z = std::ceil(Nz_total / (float)Nz_global),
         global_blocks_y = std::ceil(Ny_total / (float)Ny_global),
         global_blocks_x = std::ceil(Nx_total / (float)Nx_global),
@@ -205,12 +200,12 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
 
     // Allocate memory
     float
-        *input = (float *) malloc(GLOBAL_FLAT_SIZE*sizeof(float)),
-        *output = (float *) malloc(GLOBAL_FLAT_SIZE*sizeof(float)),
-        *d_input = (float *) malloc(LOCAL_FLAT_SIZE*sizeof(float)),
-        *d_output = (float *) malloc(LOCAL_FLAT_SIZE*sizeof(float)),
-        *d_kernel = (float *) malloc((R*2+1)*sizeof(float));
-    bool *d_mask = (bool *) malloc(LOCAL_FLAT_SIZE*sizeof(int));
+        *input = (float *) aligned_alloc(disk_block_size, GLOBAL_FLAT_SIZE*sizeof(float)),
+        *output = (float *) aligned_alloc(disk_block_size, GLOBAL_FLAT_SIZE*sizeof(float)),
+        *d_input = (float *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(float)),
+        *d_output = (float *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(float)),
+        *d_kernel = (float *) aligned_alloc(disk_block_size, (R*2+1)*sizeof(float));
+    bool *d_mask = (bool *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(int));
 
     memcpy(d_kernel, &kernel[0], (R*2+1)*sizeof(float));
     convert_uint8_to_float(input_file, temp0);
@@ -218,7 +213,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
     //omp_set_num_threads(N_DEVICES*N_STREAMS);
 
     //#pragma acc enter data copyin(d_kernel[0:R*2+1])
-    #pragma omp target enter data map(to: d_kernel[0:R*2+1])
+    //#pragma omp target enter data map(to: d_kernel[0:R*2+1])
     for (int64_t reps = 0; reps < REPITITIONS; reps++) {
         std::string
             iter_input  = reps % 2 == 0 ? temp0 : temp1,
@@ -232,11 +227,16 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                         std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global+R, Ny_total),
                         std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global+R, Nx_total)
                     };
+                    const idx3d global_offset = {
+                        global_range.z_start == 0 ? R : 0,
+                        global_range.y_start == 0 ? R : 0,
+                        global_range.x_start == 0 ? R : 0
+                    };
 
                     // Ensure padding
                     memset(input, 0, GLOBAL_FLAT_SIZE*sizeof(float));
 
-                    load_file_strided(input, iter_input, total_shape, global_shape, global_range);
+                    load_file_strided(input, iter_input, total_shape, global_shape, global_range, global_offset);
 
                     //#pragma omp parallel for schedule(static) collapse(3)
                     for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
@@ -252,7 +252,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                                 stage_to_device(d_input, input, local_range);
 
                                 //#pragma acc data copyin(d_input[0:LOCAL_FLAT_SIZE]) create(d_mask[0:LOCAL_FLAT_SIZE], d_output[0:LOCAL_FLAT_SIZE]) copyout(d_output[0:LOCAL_FLAT_SIZE])
-                                #pragma omp target data map(to: d_input[0:LOCAL_FLAT_SIZE]) map(alloc: d_mask[0:LOCAL_FLAT_SIZE]) map(from: d_output[0:LOCAL_FLAT_SIZE])
+                                //#pragma omp target data map(to: d_input[0:LOCAL_FLAT_SIZE]) map(alloc: d_mask[0:LOCAL_FLAT_SIZE]) map(from: d_output[0:LOCAL_FLAT_SIZE])
                                 {
                                     store_mask(d_input, d_mask);
                                     diffusion_core(d_input,  d_kernel, d_output, 0);
@@ -267,7 +267,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                         }
                     }
 
-                    load_file_strided(output, iter_output, total_shape, global_shape, global_range);
+                    store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset);
                 }
             }
         }

@@ -64,7 +64,7 @@ void load_file(T *dst, const std::string &path, const int64_t offset, const int6
 
 // Loads the specified index `range` of a file located at `path` on disk which is of the given `shape`, into a vector of type `T`.
 template <typename T>
-std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
 
 // Reads the specified index `range` of a file located at `path` on disk which is of the given `shape`, into `dst`.
 // `disk_shape` is the shape of the file on disk, and `shape` is the shape of the allocated memory.
@@ -72,7 +72,7 @@ std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shap
 // The last stride is always assumed to be 1, for both src and dst.
 // It is up to the caller to ensure that 1) `range` doesn't exceed `shape`, 2) `dst` is large enough to hold the data, 3) `dst` is set to 0 in case of a partial read and 0s are desired and 4) `dst` is an aligned allocation (e.g. using `aligned_alloc()`) to maximize performance.
 template <typename T>
-void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
 
 // Returns the mean of the given data
 float mean(const std::vector<float> &data);
@@ -88,10 +88,10 @@ template <typename T>
 void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements);
 
 template <typename T>
-void store_file_strided(const std::vector<T> &data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+void store_file_strided(const std::vector<T> &data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
 
 template <typename T>
-void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range);
+void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
 
 // Writes the given 2D floating point array (between 0.0 and 1.0) to a PGM file
 void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height);

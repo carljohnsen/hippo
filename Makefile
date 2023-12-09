@@ -19,7 +19,7 @@ obj/%.o: src/%.cpp
 
 generate_data:
 	@mkdir -p output
-	python3 scripts/generate_data.py output/input_img.uint8
+	python3 scripts/generate_data.py data/input_img.uint8
 
 clean:
 	rm -rf obj/ bin/ output/
