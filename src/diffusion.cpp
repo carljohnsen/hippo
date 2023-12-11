@@ -51,8 +51,8 @@ void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, c
     start_y = std::max(start_y-R, (int64_t) 0);
     start_x = std::max(start_x-R, (int64_t) 0);
     end_z   = std::min(end_z+R, Nz_global+2*R);
-    end_y   = std::min(end_y+R, Ny_global+2*R);
-    end_x   = std::min(end_x+R, Nx_global+2*R);
+    end_y   = std::min(end_y+R, Ny_global);
+    end_x   = std::min(end_x+R, Nx_global);
     const int64_t
         size_z = end_z - start_z,
         size_y = end_y - start_y,
@@ -60,7 +60,7 @@ void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, c
         offset_z = start_z == 0 ? R : 0,
         offset_y = start_y == 0 ? R : 0,
         offset_x = start_x == 0 ? R : 0,
-        global_strides[3] = {(Ny_global+2*R)*(Nx_global+2*R), (Nx_global+2*R), 1},
+        global_strides[3] = {(Ny_global)*(Nx_global), (Nx_global), 1},
         local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
 
     memset(stage, 0, disk_local_flat_size);
@@ -81,8 +81,8 @@ void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, c
 void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, const idx3drange &range) {
     auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
     end_z   = std::min(end_z, Nz_global+2*R);
-    end_y   = std::min(end_y, Ny_global+2*R);
-    end_x   = std::min(end_x, Nx_global+2*R);
+    end_y   = std::min(end_y, Ny_global);
+    end_x   = std::min(end_x, Nx_global);
 
     const int64_t
         offset_z = R,
@@ -91,7 +91,7 @@ void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, con
         size_z = end_z - start_z,
         size_y = end_y - start_y,
         size_x = end_x - start_x,
-        global_strides[3] = {(Ny_global+2*R)*(Nx_global+2*R), (Nx_global+2*R), 1},
+        global_strides[3] = {(Ny_global)*(Nx_global), (Nx_global), 1},
         local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
 
     #pragma omp parallel for schedule(static) collapse(3)
@@ -110,15 +110,16 @@ void convert_float_to_uint8(const std::string &src, const std::string &dst) {
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
+    int64_t chunk_size = 2048*disk_block_size;
     FILE *file_src = open_file_read<float>(src);
     FILE *file_dst = open_file_write<uint8_t>(dst);
-    float *buffer_src = (float *) aligned_alloc(disk_block_size, 1024*disk_block_size);
-    uint8_t *buffer_dst = (uint8_t *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+    float *buffer_src = (float *) aligned_alloc(disk_block_size, chunk_size*sizeof(float));
+    uint8_t *buffer_dst = (uint8_t *) aligned_alloc(disk_block_size, chunk_size*sizeof(uint8_t));
 
-    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += disk_block_size/sizeof(float)) {
-        int64_t size = std::min((uint64_t)(disk_block_size/sizeof(float)), (uint64_t) (TOTAL_FLAT_SIZE - chunk));
+    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += chunk_size) {
+        int64_t size = std::min(chunk_size, TOTAL_FLAT_SIZE - chunk);
         load_partial(buffer_src, file_src, chunk, size);
-        //#pragma omp parallel for schedule(static) num_threads(2)
+        #pragma omp parallel for schedule(static)
         for (int64_t i = 0; i < size; i++) {
             buffer_dst[i] = (uint8_t) (buffer_src[i] * 255.0f); // Convert to grayscale.
         }
@@ -176,22 +177,21 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
 
     // Compute the number of global blocks
     const int64_t
-        global_blocks_z = std::ceil(Nz_total / (float)Nz_global),
-        global_blocks_y = std::ceil(Ny_total / (float)Ny_global),
-        global_blocks_x = std::ceil(Nx_total / (float)Nx_global),
+        global_blocks = std::ceil(Nz_total / (float)Nz_global),
         local_blocks_z = std::ceil((Nz_global+2*R) / (float)Nz_local),
-        local_blocks_y = std::ceil((Ny_global+2*R) / (float)Ny_local),
-        local_blocks_x = std::ceil((Nx_global+2*R) / (float)Nx_local);
+        local_blocks_y = std::ceil((Ny_global) / (float)Ny_local),
+        local_blocks_x = std::ceil((Nx_global) / (float)Nx_local);
 
     const idx3d
         total_shape = {Nz_total, Ny_total, Nx_total},
-        global_shape = {Nz_global+2*R, Ny_global+2*R, Nx_global+2*R};
+        global_shape = {Nz_global+2*R, Ny_global, Nx_global};
 
     // Print the number of blocks
-    std::cout << "Global blocks: " << global_blocks_z << "x" << global_blocks_y << "x" << global_blocks_x << std::endl;
+    std::cout << "Global blocks: " << global_blocks << std::endl;
     std::cout << "Local blocks: " << local_blocks_z << "x" << local_blocks_y << "x" << local_blocks_x << std::endl;
 
     // Allocate memory. Aligned to block_size, and should overallocate to ensure alignment.
+    // TODO since the I/O functions handle alignment with buffers, the allocations doesn't need to be aligned.
     float
         *input = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
         *output = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
@@ -210,65 +210,65 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
         std::string
             iter_input  = reps % 2 == 0 ? temp0 : temp1,
             iter_output = reps % 2 == 0 ? temp1 : temp0;
-        for (int64_t global_block_z = 0; global_block_z < global_blocks_z; global_block_z++) {
-            for (int64_t global_block_y = 0; global_block_y < global_blocks_y; global_block_y++) {
-                for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
-                    const idx3drange global_range = {
-                        global_block_z*Nz_global, std::min((global_block_z+1)*Nz_global, Nz_total),
-                        global_block_y*Ny_global, std::min((global_block_y+1)*Ny_global, Ny_total),
-                        global_block_x*Nx_global, std::min((global_block_x+1)*Nx_global, Nx_total)
-                    };
+        for (int64_t global_block_i = 0; global_block_i < global_blocks; global_block_i++) {
+            const idx3drange global_range = {
+                global_block_i*Nz_global, std::min((global_block_i+1)*Nz_global, Nz_total),
+                0, Ny_total,
+                0, Nx_total
+            };
 
-                    // Read the block
-                    const idx3drange global_range_in = {
-                        std::max(global_range.z_start-R, (int64_t) 0), std::min(global_range.z_end+R, Nz_total),
-                        std::max(global_range.y_start-R, (int64_t) 0), std::min(global_range.y_end+R, Ny_total),
-                        std::max(global_range.x_start-R, (int64_t) 0), std::min(global_range.x_end+R, Nx_total)
-                    };
-                    const idx3d global_offset_in = {
-                        global_range_in.z_start == 0 ? R : 0,
-                        global_range_in.y_start == 0 ? R : 0,
-                        global_range_in.x_start == 0 ? R : 0
-                    };
+            // Read the block
+            const idx3drange global_range_in = { // TODO These numbers are currently redundant, but will be needed once true 3d is implemented
+                std::max(global_range.z_start-R, (int64_t) 0), std::min(global_range.z_end+R, Nz_total),
+                std::max(global_range.y_start-R, (int64_t) 0), std::min(global_range.y_end+R, Ny_total),
+                std::max(global_range.x_start-R, (int64_t) 0), std::min(global_range.x_end+R, Nx_total)
+            };
+            const idx3d global_offset_in = {
+                global_range_in.z_start == 0 ? R : 0,
+                0,
+                0
+            };
 
-                    // Ensure padding
-                    memset(input, 0, disk_global_flat_size);
+            // Ensure padding
+            memset(input, 0, disk_global_flat_size);
 
-                    load_file_strided(input, iter_input, total_shape, global_shape, global_range_in, global_offset_in);
+            auto load_start = std::chrono::high_resolution_clock::now();
+            load_file_strided(input, iter_input, total_shape, global_shape, global_range_in, global_offset_in);
+            auto load_end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> load_duration = load_end - load_start;
+            std::cout << "Loading took " << load_duration.count() << " seconds at " << disk_global_flat_size/load_duration.count()/1e9 << " GB/s" << std::endl;
 
-                    //#pragma omp parallel for schedule(static) collapse(3)
-                    for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
-                        for (int64_t local_block_y = 0; local_block_y < local_blocks_y; local_block_y++) {
-                            for (int64_t local_block_x = 0; local_block_x < local_blocks_x; local_block_x++) {
-                                idx3drange local_range = {
-                                    local_block_z*Nz_local, (local_block_z+1)*Nz_local,
-                                    local_block_y*Ny_local, (local_block_y+1)*Ny_local,
-                                    local_block_x*Nx_local, (local_block_x+1)*Nx_local
-                                };
+            //#pragma omp parallel for schedule(static) collapse(3)
+            for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
+                for (int64_t local_block_y = 0; local_block_y < local_blocks_y; local_block_y++) {
+                    for (int64_t local_block_x = 0; local_block_x < local_blocks_x; local_block_x++) {
+                        idx3drange local_range = {
+                            local_block_z*Nz_local, (local_block_z+1)*Nz_local,
+                            local_block_y*Ny_local, (local_block_y+1)*Ny_local,
+                            local_block_x*Nx_local, (local_block_x+1)*Nx_local
+                        };
 
-                                // Copy data to device
-                                stage_to_device(d_input, input, local_range);
+                        // Copy data to device
+                        stage_to_device(d_input, input, local_range);
 
-                                #pragma omp target data map(to: d_input[0:LOCAL_FLAT_SIZE]) map(alloc: d_mask[0:LOCAL_FLAT_SIZE]) map(from: d_output[0:LOCAL_FLAT_SIZE])
-                                {
-                                    store_mask(d_input, d_mask);
-                                    diffusion_core(d_input,  d_kernel, d_output, 0);
-                                    diffusion_core(d_output, d_kernel, d_input,  1);
-                                    diffusion_core(d_input,  d_kernel, d_output, 2);
-                                    illuminate(d_mask, d_output);
-                                }
-
-                                // Copy data back to host
-                                stage_to_host(output, d_output, local_range);
-                            }
+                        #pragma omp target data map(to: d_input[0:LOCAL_FLAT_SIZE]) map(alloc: d_mask[0:LOCAL_FLAT_SIZE]) map(from: d_output[0:LOCAL_FLAT_SIZE])
+                        {
+                            store_mask(d_input, d_mask);
+                            diffusion_core(d_input,  d_kernel, d_output, 0);
+                            diffusion_core(d_output, d_kernel, d_input,  1);
+                            diffusion_core(d_input,  d_kernel, d_output, 2);
+                            illuminate(d_mask, d_output);
                         }
+
+                        // Copy data back to host
+                        stage_to_host(output, d_output, local_range);
                     }
-
-                    const idx3d global_offset_out = { R, R, R };
-
-                    store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
                 }
             }
+
+            const idx3d global_offset_out = { R, 0, 0 };
+
+            store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
         }
     }
 

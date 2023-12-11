@@ -43,9 +43,9 @@ constexpr int64_t
     Ny_total = 1024,
     Nx_total = 1024,
     // Out-of-core main memory parameters
-    Nz_global = 512,
-    Ny_global = 512,
-    Nx_global = 512,
+    Nz_global = Nz_total / 4,
+    Ny_global = Ny_total,
+    Nx_global = Nx_total,
     // Out-of-core GPU memory parameters
     Nz_local = 256,
     Ny_local = 256,
@@ -131,7 +131,7 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &shape_total
 
     // If the shape on disk is the same as the shape in memory, just load the entire file
     if (shape_global.y == shape_total.y && shape_global.x == shape_total.x && offset_global.y == 0 && offset_global.x == 0 && range.y_start == 0 && range.x_start == 0 && range.y_end == shape_total.y && range.x_end == shape_total.x) {
-        load_file(dst, path, 0, shape_total.z*shape_total.y*shape_total.x);
+        load_file(dst + offset_global.z*strides_global.z, path, range.z_start*strides_total.z, sizes.z*strides_total.z);
         return;
     }
     assert (false && "Not implemented yet :) - After the deadline!");
@@ -215,7 +215,7 @@ void store_file(const T *data, const std::string &path, const int64_t offset, co
 
     // Write the buffer to disk
     fseek(fp, aligned_start, SEEK_SET);
-    fwrite((char *) buffer, sizeof(T), aligned_size, fp);
+    int64_t n = fwrite((char *) buffer, sizeof(T), aligned_size/sizeof(T), fp);
 
     // Free the buffer and close the file
     free(buffer);
@@ -232,7 +232,7 @@ void store_file_strided(const T *data, const std::string &path, const idx3d &sha
 
     // If the shape on disk is the same as the shape in memory, just store the entire file
     if (shape_global.y == shape_total.y && shape_global.x == shape_total.x && offset_global.y == 0 && offset_global.x == 0 && range.y_start == 0 && range.x_start == 0 && range.y_end == shape_total.y && range.x_end == shape_total.x) {
-        store_file(data, path, offset_global.z*strides_total.z, sizes.z*strides_total.z);
+        store_file(data + offset_global.z*strides_global.z, path, range.z_start*strides_total.z, sizes.z*strides_total.z);
         return;
     }
 
