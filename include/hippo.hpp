@@ -43,28 +43,46 @@ constexpr int64_t
     Ny_total = 128,
     Nx_total = 128,
     // Out-of-core main memory parameters
-    Nz_global = 64,
-    Ny_global = 64,
-    Nx_global = 64,
+    Nz_global = 128,
+    Ny_global = 128,
+    Nx_global = 128,
     // Out-of-core GPU memory parameters
-    Nz_local = 32,
-    Ny_local = 32,
-    Nx_local = 32,
+    Nz_local = 256,
+    Ny_local = 256,
+    Nx_local = 256,
     // Input image generation parameters
     C = 4;
 
-// General functions
+// General function headers
+// Returns the mean of the given data
+float mean(const std::vector<float> &data);
 
+// Returns the standard deviation of the given data
+float stddev(const std::vector<float> &data);
+
+// Writes the given 2D floating point array (between 0.0 and 1.0) to a PGM file
+void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height);
+
+// Templated functions
 // Loads `n_elements` of a file located at `path` on disk at `offset` elements from the beginning of the file, into a vector of type `T`.
 template <typename T>
-std::vector<T> load_file(const std::string &path, const int64_t offset, const int64_t n_elements);
+void load_file(T *dst, const std::string &path, const int64_t offset, const int64_t n_elements) {
+    FILE *fp;
+    //int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
+    int fd = open(path.c_str(), O_RDONLY);
+    fp = fdopen(fd, "rb");
+    fseek(fp, offset*sizeof(T), SEEK_SET);
+    int64_t n = fread((char *) dst, sizeof(T), n_elements, fp);
+    assert(n == n_elements && "Failed to read all elements");
+    fclose(fp);
+}
 
 template <typename T>
-void load_file(T *dst, const std::string &path, const int64_t offset, const int64_t n_elements);
-
-// Loads the specified index `range` of a file located at `path` on disk which is of the given `shape`, into a vector of type `T`.
-template <typename T>
-std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
+std::vector<T> load_file(const std::string &path, const int64_t offset, const int64_t n_elements) {
+    std::vector<T> data(n_elements);
+    load_file(data.data(), path, offset, n_elements);
+    return data;
+}
 
 // Reads the specified index `range` of a file located at `path` on disk which is of the given `shape`, into `dst`.
 // `disk_shape` is the shape of the file on disk, and `shape` is the shape of the allocated memory.
@@ -72,28 +90,97 @@ std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shap
 // The last stride is always assumed to be 1, for both src and dst.
 // It is up to the caller to ensure that 1) `range` doesn't exceed `shape`, 2) `dst` is large enough to hold the data, 3) `dst` is set to 0 in case of a partial read and 0s are desired and 4) `dst` is an aligned allocation (e.g. using `aligned_alloc()`) to maximize performance.
 template <typename T>
-void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
+void load_file_strided(T *dst, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global) {
+    const idx3d
+        strides_global = {disk_shape.y*disk_shape.x, disk_shape.x, 1},
+        strides_local = {shape.y*shape.x, shape.x, 1},
+        sizes_local = {range.z_end - range.z_start, range.y_end - range.y_start, range.x_end - range.x_start};
 
-// Returns the mean of the given data
-float mean(const std::vector<float> &data);
+    if (shape.z == disk_shape.z && shape.y == disk_shape.y && shape.x == disk_shape.x) {
+        load_file(dst, path, 0, disk_shape.z*disk_shape.y*disk_shape.x);
+        return;
+    }
 
-// Returns the standard deviation of the given data
-float stddev(const std::vector<float> &data);
+    FILE *fp;
+    //int fd = open(path.c_str(), O_RDONLY | O_DIRECT); // TODO ah yes, that sweet alignment missing. :)
+    int fd = open(path.c_str(), O_RDONLY);
+    fp = fdopen(fd, "rb");
+    fseek(fp, range.z_start*strides_global.z + range.y_start*strides_global.y + range.x_start*strides_global.x*sizeof(T), SEEK_SET);
+    for (int64_t z = 0; z < sizes_local.z; z++) {
+        for (int64_t y = 0; y < sizes_local.y; y++) {
+            int64_t n = fread((char *) &dst[(z+offset_global.z)*strides_local.z + (y+offset_global.y)*strides_local.y + offset_global.x*strides_local.x], sizeof(T), sizes_local.x, fp);
+            assert(n == sizes_local.x && "Failed to read all elements");
+            fseek(fp, (strides_global.y - sizes_local.x)*sizeof(T), SEEK_CUR);
+        }
+        fseek(fp, (strides_global.y - sizes_local.y)*strides_global.y*sizeof(T), SEEK_CUR);
+    }
+    fclose(fp);
+}
+
+// Loads the specified index `range` of a file located at `path` on disk which is of the given `shape`, into a vector of type `T`.
+template <typename T>
+std::vector<T> load_file_strided(const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global) {
+    std::vector<T> data(shape.z*shape.y*shape.x);
+    load_file_strided(data.data(), path, disk_shape, shape, range, offset_global);
+    return data;
+}
 
 // Stores `data.size()` elements of `data` into a file located at `path` on disk at `offset` elements from the beginning of the file.
 template <typename T>
-void store_file(const std::vector<T> &data, const std::string &path, const int64_t offset);
+void store_file(const std::vector<T> &data, const std::string &path, const int64_t offset) {
+    std::ofstream file;
+    file.open(path, std::ios::binary | std::ios::in);
+    if (!file.is_open()) {
+        file.clear();
+        file.open(path, std::ios::binary | std::ios::out);
+    }
+    file.seekp(offset*sizeof(T), std::ios::beg);
+    file.write(reinterpret_cast<const char*>(data.data()), data.size()*sizeof(T));
+    file.flush();
+    file.close();
+}
 
 template <typename T>
-void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements);
+void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements) {
+    FILE *fp;
+    //int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    int fd = open(path.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    fp = fdopen(fd, "r+b");
+    fseek(fp, offset*sizeof(T), SEEK_SET);
+    fwrite((char *) data, sizeof(T), n_elements, fp);
+    fclose(fp);
+}
 
 template <typename T>
-void store_file_strided(const std::vector<T> &data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
+void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global) {
+    const idx3d
+        strides_global = {disk_shape.y*disk_shape.x, disk_shape.x, 1},
+        strides_local = {shape.y*shape.x, shape.x, 1},
+        sizes_local = {range.z_end - range.z_start, range.y_end - range.y_start, range.x_end - range.x_start};
+
+    if (shape.z == disk_shape.z && shape.y == disk_shape.y && shape.x == disk_shape.x) {
+        store_file(data, path, 0, disk_shape.z*disk_shape.y*disk_shape.x);
+        return;
+    }
+
+    FILE *fp;
+    //int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    int fd = open(path.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    fp = fdopen(fd, "r+b");
+    fseek(fp, range.z_start*strides_global.z + range.y_start*strides_global.y + range.x_start*strides_global.x*sizeof(T), SEEK_SET);
+    for (int64_t z = 0; z < sizes_local.z; z++) {
+        for (int64_t y = 0; y < sizes_local.y; y++) {
+            fwrite((char *) &data[(z+offset_global.z)*strides_local.z + (y+offset_global.y)*strides_local.y + offset_global.x], sizeof(T), sizes_local.x, fp);
+            fseek(fp, (strides_global.y - sizes_local.x)*sizeof(T), SEEK_CUR);
+        }
+        fseek(fp, (strides_global.y - sizes_local.y)*strides_global.y*sizeof(T), SEEK_CUR);
+    }
+    fclose(fp);
+}
 
 template <typename T>
-void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global);
-
-// Writes the given 2D floating point array (between 0.0 and 1.0) to a PGM file
-void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height);
+void store_file_strided(const std::vector<T> &data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global) {
+    store_file_strided(data.data(), path, disk_shape, shape, range, offset_global);
+}
 
 #endif // HIPPO_HPP
