@@ -214,9 +214,9 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
             for (int64_t global_block_y = 0; global_block_y < global_blocks_y; global_block_y++) {
                 for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
                     const idx3drange global_range = {
-                        global_block_z*Nz_global, (global_block_z+1)*Nz_global,
-                        global_block_y*Ny_global, (global_block_y+1)*Ny_global,
-                        global_block_x*Nx_global, (global_block_x+1)*Nx_global
+                        global_block_z*Nz_global, std::min((global_block_z+1)*Nz_global, Nz_total),
+                        global_block_y*Ny_global, std::min((global_block_y+1)*Ny_global, Ny_total),
+                        global_block_x*Nx_global, std::min((global_block_x+1)*Nx_global, Nx_total)
                     };
 
                     // Read the block
