@@ -39,17 +39,17 @@ typedef uint16_t voxel_type;
 // Constants
 constexpr int64_t
     // On disk parameters for generated input
-    Nz_total = 256,
-    Ny_total = 256,
-    Nx_total = 256,
+    Nz_total = 1024,
+    Ny_total = 1024,
+    Nx_total = 1024,
     // Out-of-core main memory parameters
-    Nz_global = 128,
-    Ny_global = 128,
-    Nx_global = 128,
+    Nz_global = 512,
+    Ny_global = 512,
+    Nx_global = 512,
     // Out-of-core GPU memory parameters
-    Nz_local = 64,
-    Ny_local = 64,
-    Nx_local = 64,
+    Nz_local = 256,
+    Ny_local = 256,
+    Nx_local = 256,
     // Input image generation parameters
     C = 4;
 
@@ -66,15 +66,15 @@ void write_pgm(const std::string &filename, const std::vector<float> &data, cons
 // Templated functions
 template<typename T>
 FILE* open_file_read(const std::string &path) {
-    //int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
-    int fd = open(path.c_str(), O_RDONLY);
+    int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
+    //int fd = open(path.c_str(), O_RDONLY);
     return fdopen(fd, "rb");
 }
 
 template<typename T>
 FILE* open_file_write(const std::string &path) {
-    //int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    int fd = open(path.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    //int fd = open(path.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
     return fdopen(fd, "r+b");
 }
 

@@ -133,22 +133,23 @@ void convert_float_to_uint8(const std::string &src, const std::string &dst) {
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    std::cout << "Converting float to uint8 took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
+    std::cout << "Converting float to uint8 took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*(sizeof(float) + sizeof(uint8_t)))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
 void convert_uint8_to_float(const std::string &src, const std::string &dst) {
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
+    int64_t chunk_size = 2048*disk_block_size;
     FILE *file_src = open_file_read<uint8_t>(src);
     FILE *file_dst = open_file_write<float>(dst);
-    uint8_t *buffer_src = (uint8_t *) aligned_alloc(disk_block_size, 1024*disk_block_size);
-    float *buffer_dst = (float *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+    uint8_t *buffer_src = (uint8_t *) aligned_alloc(disk_block_size, chunk_size*sizeof(uint8_t));
+    float *buffer_dst = (float *) aligned_alloc(disk_block_size, chunk_size*sizeof(float));
 
-    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += disk_block_size/sizeof(float)) {
-        int64_t size = std::min((uint64_t)(disk_block_size/sizeof(float)), (uint64_t) (TOTAL_FLAT_SIZE - chunk));
+    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += chunk_size) {
+        int64_t size = std::min(chunk_size, TOTAL_FLAT_SIZE - chunk);
         load_partial(buffer_src, file_src, chunk, size);
-        //#pragma omp parallel for schedule(static) num_threads(2)
+        #pragma omp parallel for schedule(static)
         for (int64_t i = 0; i < size; i++) {
             buffer_dst[i] = buffer_src[i] > 0 ? 1.0f : 0.0f; // Loading a mask.
         }
@@ -163,7 +164,7 @@ void convert_uint8_to_float(const std::string &src, const std::string &dst) {
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    std::cout << "Converting uint8 to float took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
+    std::cout << "Converting uint8 to float took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*(sizeof(float) + sizeof(uint8_t)))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
 void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file) {
