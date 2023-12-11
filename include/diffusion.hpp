@@ -15,6 +15,12 @@ constexpr int64_t REPITITIONS = 1;
 constexpr int64_t TOTAL_FLAT_SIZE = Nz_total * Ny_total * Nx_total;
 constexpr int64_t GLOBAL_FLAT_SIZE = (Nz_global+2*R) * (Ny_global+2*R) * (Nx_global+2*R);
 constexpr int64_t LOCAL_FLAT_SIZE = (Nz_local+2*R) * (Ny_local+2*R) * (Nx_local+2*R);
+constexpr int64_t disk_block_size = 4096; // TODO get from filesystem. In bytes.
+constexpr int64_t disk_global_flat_size = ((GLOBAL_FLAT_SIZE*sizeof(float) / disk_block_size) + (GLOBAL_FLAT_SIZE*sizeof(float) % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
+constexpr int64_t disk_local_flat_size = ((LOCAL_FLAT_SIZE*sizeof(float) / disk_block_size) + (LOCAL_FLAT_SIZE*sizeof(float) % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
+constexpr int64_t disk_mask_flat_size = ((LOCAL_FLAT_SIZE*sizeof(bool) / disk_block_size) + (LOCAL_FLAT_SIZE*sizeof(bool) % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
+constexpr int64_t disk_kernel_flat_size = (((R*2+1) / disk_block_size) + ((R*2+1) % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
+
 
 // Number of devices to use
 constexpr int64_t N_DEVICES = 1;

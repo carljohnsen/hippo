@@ -24,8 +24,8 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
                 }
 
                 output[output_index] = sum;
+            }
         }
-    }
     }
 }
 
@@ -63,14 +63,16 @@ void stage_to_device(float *stage, float *src, idx3drange &range) {
         global_strides[3] = {(Ny_global+2*R)*(Nx_global+2*R), (Nx_global+2*R), 1},
         local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
 
-    memset(stage, 0, LOCAL_FLAT_SIZE*sizeof(float));
+    memset(stage, 0, disk_local_flat_size);
 
     // Fill the staging area
+    #pragma omp parallel for schedule(static) collapse(3)
     for (int64_t z = 0; z < size_z; z++) {
         for (int64_t y = 0; y < size_y; y++) {
             for (int64_t x = 0; x < size_x; x++) {
-                stage[(offset_z+z)*local_strides[0] + (offset_y+y)*local_strides[1] + (offset_x+x)*local_strides[2]] =
-                    src[(start_z+z)*global_strides[0] + (start_y+y)*global_strides[1] + (start_x+x)*global_strides[2]];
+                int64_t dst_idx = (z+offset_z)*local_strides[0] + (y+offset_y)*local_strides[1] + (x+offset_x)*local_strides[2];
+                int64_t src_idx = (z+start_z)*global_strides[0] + (y+start_y)*global_strides[1] + (x+start_x)*global_strides[2];
+                stage[dst_idx] = src[src_idx];
             }
         }
     }
@@ -92,11 +94,13 @@ void stage_to_host(float *dst, float *stage, idx3drange &range) {
         global_strides[3] = {(Ny_global+2*R)*(Nx_global+2*R), (Nx_global+2*R), 1},
         local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
 
+    #pragma omp parallel for schedule(static) collapse(3)
     for (int64_t z = 0; z < size_z; z++) {
         for (int64_t y = 0; y < size_y; y++) {
             for (int64_t x = 0; x < size_x; x++) {
-                dst[(start_z+z)*global_strides[0] + (start_y+y)*global_strides[1] + (start_x+x)*global_strides[2]] =
-                    stage[(z+offset_z)*local_strides[0] + (y+offset_y)*local_strides[1] + (x+offset_x)*local_strides[2]];
+                int64_t dst_idx = (z+start_z)*global_strides[0] + (y+start_y)*global_strides[1] + (x+start_x)*global_strides[2];
+                int64_t src_idx = (z+offset_z)*local_strides[0] + (y+offset_y)*local_strides[1] + (x+offset_x)*local_strides[2];
+                dst[dst_idx] = stage[src_idx];
             }
         }
     }
@@ -164,7 +168,6 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
 
     // Compute the number of global blocks
     const int64_t
-        disk_block_size = 4096,
         global_blocks_z = std::ceil(Nz_total / (float)Nz_global),
         global_blocks_y = std::ceil(Ny_total / (float)Ny_global),
         global_blocks_x = std::ceil(Nx_total / (float)Nx_global),
@@ -176,20 +179,18 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
         total_shape = {Nz_total, Ny_total, Nx_total},
         global_shape = {Nz_global+2*R, Ny_global+2*R, Nx_global+2*R};
 
-    std::cout << "Local flat size allocation is " << LOCAL_FLAT_SIZE*sizeof(float) << " bytes" << std::endl;
-
     // Print the number of blocks
     std::cout << "Global blocks: " << global_blocks_z << "x" << global_blocks_y << "x" << global_blocks_x << std::endl;
     std::cout << "Local blocks: " << local_blocks_z << "x" << local_blocks_y << "x" << local_blocks_x << std::endl;
 
-    // Allocate memory
+    // Allocate memory. Aligned to block_size, and should overallocate to ensure alignment.
     float
-        *input = (float *) aligned_alloc(disk_block_size, GLOBAL_FLAT_SIZE*sizeof(float)),
-        *output = (float *) aligned_alloc(disk_block_size, GLOBAL_FLAT_SIZE*sizeof(float)),
-        *d_input = (float *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(float)),
-        *d_output = (float *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(float)),
-        *d_kernel = (float *) aligned_alloc(disk_block_size, (R*2+1)*sizeof(float));
-    bool *d_mask = (bool *) aligned_alloc(disk_block_size, LOCAL_FLAT_SIZE*sizeof(int));
+        *input = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
+        *output = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
+        *d_input = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
+        *d_output = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
+        *d_kernel = (float *) aligned_alloc(disk_block_size, disk_kernel_flat_size);
+    bool *d_mask = (bool *) aligned_alloc(disk_block_size, disk_mask_flat_size);
 
     memcpy(d_kernel, &kernel[0], (R*2+1)*sizeof(float));
     convert_uint8_to_float(input_file, temp0);
@@ -217,7 +218,7 @@ void diffusion(std::string &input_file, std::vector<float>& kernel, std::string 
                     };
 
                     // Ensure padding
-                    memset(input, 0, GLOBAL_FLAT_SIZE*sizeof(float));
+                    memset(input, 0, disk_global_flat_size);
 
                     load_file_strided(input, iter_input, total_shape, global_shape, global_range, global_offset);
 
