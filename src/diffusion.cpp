@@ -46,32 +46,39 @@ void store_mask(const float *__restrict__ input, bool *__restrict__ mask) {
 }
 
 void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, const idx3drange &range) {
-    auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
-    start_z = std::max(start_z-R, (int64_t) 0);
-    start_y = std::max(start_y-R, (int64_t) 0);
-    start_x = std::max(start_x-R, (int64_t) 0);
-    end_z   = std::min(end_z+R, Nz_global+2*R);
-    end_y   = std::min(end_y+R, Ny_global);
-    end_x   = std::min(end_x+R, Nx_global);
-    const int64_t
-        size_z = end_z - start_z,
-        size_y = end_y - start_y,
-        size_x = end_x - start_x,
-        offset_z = start_z == 0 ? R : 0,
-        offset_y = start_y == 0 ? R : 0,
-        offset_x = start_x == 0 ? R : 0,
-        global_strides[3] = {(Ny_global)*(Nx_global), (Nx_global), 1},
-        local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
+    const idx3d
+        start = {
+            std::max(range.z_start-R, (int64_t) 0),
+            std::max(range.y_start-R, (int64_t) 0),
+            std::max(range.x_start-R, (int64_t) 0)
+        },
+        end = {
+            std::min(range.z_end+R, Nz_global+2*R),
+            std::min(range.y_end+R, Ny_global),
+            std::min(range.x_end+R, Nx_global)
+        },
+        size = {
+            end.z - start.z,
+            end.y - start.y,
+            end.x - start.x
+        },
+        offset = {
+            start.z == 0 ? R : 0,
+            start.y == 0 ? R : 0,
+            start.x == 0 ? R : 0
+        },
+        global_strides = { Ny_global*Nx_global,           Nx_global,    1 },
+        local_strides =  { (Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1 };
 
     memset(stage, 0, disk_local_flat_size);
 
     // Fill the staging area
     #pragma omp parallel for schedule(static) collapse(3)
-    for (int64_t z = 0; z < size_z; z++) {
-        for (int64_t y = 0; y < size_y; y++) {
-            for (int64_t x = 0; x < size_x; x++) {
-                int64_t dst_idx = (z+offset_z)*local_strides[0] + (y+offset_y)*local_strides[1] + (x+offset_x)*local_strides[2];
-                int64_t src_idx = (z+start_z)*global_strides[0] + (y+start_y)*global_strides[1] + (x+start_x)*global_strides[2];
+    for (int64_t z = 0; z < size.z; z++) {
+        for (int64_t y = 0; y < size.y; y++) {
+            for (int64_t x = 0; x < size.x; x++) {
+                int64_t dst_idx = (z+offset.z)*local_strides.z + (y+offset.y)*local_strides.y + (x+offset.x)*local_strides.x;
+                int64_t src_idx = (z+start.z)*global_strides.z + (y+start.y)*global_strides.y + (x+start.x)*global_strides.x;
                 stage[dst_idx] = src[src_idx];
             }
         }
@@ -79,27 +86,28 @@ void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, c
 }
 
 void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, const idx3drange &range) {
-    auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
-    end_z   = std::min(end_z, Nz_global+2*R);
-    end_y   = std::min(end_y, Ny_global);
-    end_x   = std::min(end_x, Nx_global);
-
-    const int64_t
-        offset_z = R,
-        offset_y = R,
-        offset_x = R,
-        size_z = end_z - start_z,
-        size_y = end_y - start_y,
-        size_x = end_x - start_x,
-        global_strides[3] = {(Ny_global)*(Nx_global), (Nx_global), 1},
-        local_strides[3] = {(Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1};
+    const idx3d
+        start = { range.z_start, range.y_start, range.x_start },
+        end = {
+            std::min(range.z_end, Nz_global+2*R),
+            std::min(range.y_end, Ny_global),
+            std::min(range.x_end, Nx_global)
+        },
+        offset = { R, R, R },
+        size = {
+            end.z - start.z,
+            end.y - start.y,
+            end.x - start.x
+        },
+        global_strides = { Ny_global*Nx_global,           Nx_global,    1 },
+        local_strides =  { (Ny_local+2*R)*(Nx_local+2*R), Nx_local+2*R, 1 };
 
     #pragma omp parallel for schedule(static) collapse(3)
-    for (int64_t z = 0; z < size_z; z++) {
-        for (int64_t y = 0; y < size_y; y++) {
-            for (int64_t x = 0; x < size_x; x++) {
-                int64_t dst_idx = (z+start_z)*global_strides[0] + (y+start_y)*global_strides[1] + (x+start_x)*global_strides[2];
-                int64_t src_idx = (z+offset_z)*local_strides[0] + (y+offset_y)*local_strides[1] + (x+offset_x)*local_strides[2];
+    for (int64_t z = 0; z < size.z; z++) {
+        for (int64_t y = 0; y < size.y; y++) {
+            for (int64_t x = 0; x < size.x; x++) {
+                int64_t dst_idx = (z+start.z)*global_strides.z + (y+start.y)*global_strides.y + (x+start.x)*global_strides.x;
+                int64_t src_idx = (z+offset.z)*local_strides.z + (y+offset.y)*local_strides.y + (x+offset.x)*local_strides.x;
                 dst[dst_idx] = stage[src_idx];
             }
         }

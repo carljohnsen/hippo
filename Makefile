@@ -1,4 +1,4 @@
-CXXFLAGS=-Wall -Wextra -Werror -pedantic -std=c++20 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC -g -O0
+CXXFLAGS=-Wall -Wextra -Werror -pedantic -std=c++20 -march=native -mtune=native -fopenmp -Iinclude/ -fPIC -g -O3
 #CXXFLAGS+=-foffload=nvptx-none -fcf-protection=none -fno-stack-protector -no-pie -foffload="-O3 -g" -fsanitize=address
 CXXFLAGS+=-mp=gpu #-Minfo=mp
 #CXXFLAGS+=-fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target -march=sm_75 --cuda-path=/opt/nvidia/hpc_sdk/Linux_x86_64/22.11/cuda/11.0 -v
