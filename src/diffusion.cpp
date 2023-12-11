@@ -212,11 +212,17 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
         for (int64_t global_block_z = 0; global_block_z < global_blocks_z; global_block_z++) {
             for (int64_t global_block_y = 0; global_block_y < global_blocks_y; global_block_y++) {
                 for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
+                    const idx3drange global_range = {
+                        global_block_z*Nz_global, (global_block_z+1)*Nz_global,
+                        global_block_y*Ny_global, (global_block_y+1)*Ny_global,
+                        global_block_x*Nx_global, (global_block_x+1)*Nx_global
+                    };
+
                     // Read the block
                     const idx3drange global_range_in = {
-                        std::max((global_block_z*Nz_global)-R, (int64_t) 0), std::min((global_block_z+1)*Nz_global+R, Nz_total),
-                        std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global+R, Ny_total),
-                        std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global+R, Nx_total)
+                        std::max(global_range.z_start-R, (int64_t) 0), std::min(global_range.z_end+R, Nz_total),
+                        std::max(global_range.y_start-R, (int64_t) 0), std::min(global_range.y_end+R, Ny_total),
+                        std::max(global_range.x_start-R, (int64_t) 0), std::min(global_range.x_end+R, Nx_total)
                     };
                     const idx3d global_offset_in = {
                         global_range_in.z_start == 0 ? R : 0,
@@ -257,14 +263,9 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
                         }
                     }
 
-                    const idx3drange global_range_out = {
-                        global_block_z*Nz_global, (global_block_z+1)*Nz_global,
-                        global_block_y*Ny_global, (global_block_y+1)*Ny_global,
-                        global_block_x*Nx_global, (global_block_x+1)*Nx_global
-                    };
                     const idx3d global_offset_out = { R, R, R };
 
-                    store_file_strided(output, iter_output, total_shape, global_shape, global_range_out, global_offset_out);
+                    store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
                 }
             }
         }
