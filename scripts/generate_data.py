@@ -11,9 +11,10 @@ if __name__ == '__main__':
 
     consts = helpers.parse_header('include/hippo.hpp')
 
-    Nz = int(consts['Nz_total'])
-    Ny = int(consts['Ny_total'])
-    Nx = int(consts['Nx_total'])
+    #Nz = int(consts['Nz_total'])
+    #Ny = int(consts['Ny_total'])
+    #Nx = int(consts['Nx_total'])
+    Nz, Ny, Nx = 1024, 1024, 1024
 
     img = np.zeros((Nz, Ny, Nx), dtype=np.uint8)
 
