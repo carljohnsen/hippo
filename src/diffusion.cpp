@@ -107,29 +107,28 @@ void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, con
 }
 
 void convert_float_to_uint8(const std::string &src, const std::string &dst) {
-    const int64_t chunk_size = 4096;
-
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
-    // Write the output to the uint8 file
-    std::ifstream inf(src, std::ios::binary);
-    std::ios::openmode mode = std::ios::binary;
-    // If file exists, append in mode
-    if (std::filesystem::exists(dst)) {
-        mode |= std::ios::in;
-    }
-    std::ofstream outf(dst, mode);
-    std::vector<float> buffer0(chunk_size);
-    std::vector<uint8_t> buffer1(chunk_size);
-    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += chunk_size) {
-        int64_t size = std::min((int64_t)chunk_size, TOTAL_FLAT_SIZE - chunk);
-        inf.read((char *) &buffer0[0], size*sizeof(float));
+    FILE *file_src = open_file_read<float>(src);
+    FILE *file_dst = open_file_write<uint8_t>(dst);
+    float *buffer_src = (float *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+    uint8_t *buffer_dst = (uint8_t *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+
+    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += disk_block_size/sizeof(float)) {
+        int64_t size = std::min((uint64_t)(disk_block_size/sizeof(float)), (uint64_t) (TOTAL_FLAT_SIZE - chunk));
+        load_partial(buffer_src, file_src, chunk, size);
+        //#pragma omp parallel for schedule(static) num_threads(2)
         for (int64_t i = 0; i < size; i++) {
-            buffer1[i] = (uint8_t) (buffer0[i] * 255.0f); // Convert to grayscale.
+            buffer_dst[i] = (uint8_t) (buffer_src[i] * 255.0f); // Convert to grayscale.
         }
-        outf.write((char *) &buffer1[0], size);
+        store_partial(buffer_dst, file_dst, chunk, size);
     }
+
+    free(buffer_dst);
+    free(buffer_src);
+    fclose(file_dst);
+    fclose(file_src);
 
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
@@ -138,20 +137,28 @@ void convert_float_to_uint8(const std::string &src, const std::string &dst) {
 }
 
 void convert_uint8_to_float(const std::string &src, const std::string &dst) {
-    const int64_t chunk_size = 1024;
-
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
-    // Construct temp0 from the uint8 file
-    std::vector<float> buffer1(chunk_size);
-    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += chunk_size) {
-        std::vector<uint8_t> buffer0 = load_file<uint8_t>(src, chunk, chunk_size);
-        for (int64_t i = 0; i < (int64_t) buffer0.size(); i++) {
-            buffer1[i] = buffer0[i] > 0 ? 1.0f : 0.0f; // Loading a mask.
+    FILE *file_src = open_file_read<uint8_t>(src);
+    FILE *file_dst = open_file_write<float>(dst);
+    uint8_t *buffer_src = (uint8_t *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+    float *buffer_dst = (float *) aligned_alloc(disk_block_size, 1024*disk_block_size);
+
+    for (int64_t chunk = 0; chunk < TOTAL_FLAT_SIZE; chunk += disk_block_size/sizeof(float)) {
+        int64_t size = std::min((uint64_t)(disk_block_size/sizeof(float)), (uint64_t) (TOTAL_FLAT_SIZE - chunk));
+        load_partial(buffer_src, file_src, chunk, size);
+        //#pragma omp parallel for schedule(static) num_threads(2)
+        for (int64_t i = 0; i < size; i++) {
+            buffer_dst[i] = buffer_src[i] > 0 ? 1.0f : 0.0f; // Loading a mask.
         }
-        store_file(buffer1, dst, chunk);
+        store_partial(buffer_dst, file_dst, chunk, size);
     }
+
+    free(buffer_dst);
+    free(buffer_src);
+    fclose(file_dst);
+    fclose(file_src);
 
     // End timing
     auto end = std::chrono::high_resolution_clock::now();
