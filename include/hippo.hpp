@@ -39,17 +39,17 @@ typedef uint16_t voxel_type;
 // Constants
 constexpr int64_t
     // On disk parameters for generated input
-    Nz_total = 128,
-    Ny_total = 128,
-    Nx_total = 128,
+    Nz_total = 512,
+    Ny_total = 512,
+    Nx_total = 512,
     // Out-of-core main memory parameters
-    Nz_global = 128,
-    Ny_global = 128,
-    Nx_global = 128,
+    Nz_global = 256,
+    Ny_global = 256,
+    Nx_global = 256,
     // Out-of-core GPU memory parameters
-    Nz_local = 256,
-    Ny_local = 256,
-    Nx_local = 256,
+    Nz_local = 128,
+    Ny_local = 128,
+    Nx_local = 128,
     // Input image generation parameters
     C = 4;
 
@@ -164,20 +164,25 @@ void store_file(const T *data, const std::string &path, const int64_t offset, co
 }
 
 template <typename T>
-void store_file_strided(const T *data, const std::string &path, const idx3d &disk_shape, const idx3d &shape, const idx3drange &range, const idx3d &offset_global) {
+void store_file_strided(const T *data, const std::string &path, const idx3d &shape_total, const idx3d &shape_global, const idx3drange &range, const idx3d &offset_global) {
     const idx3d
-        strides_global = {disk_shape.y*disk_shape.x, disk_shape.x, 1},
-        strides_local = {shape.y*shape.x, shape.x, 1},
-        sizes_local = {range.z_end - range.z_start, range.y_end - range.y_start, range.x_end - range.x_start};
+        strides_total = {shape_total.y*shape_total.x, shape_total.x, 1},
+        strides_global = {shape_global.y*shape_global.x, shape_global.x, 1},
+        sizes_global = {range.z_end - range.z_start, range.y_end - range.y_start, range.x_end - range.x_start};
 
-    if (shape.z == disk_shape.z && shape.y == disk_shape.y && shape.x == disk_shape.x) {
-        store_file(data, path, 0, disk_shape.z*disk_shape.y*disk_shape.x);
+    if (shape_global.z == shape_total.z && shape_global.y == shape_total.y && shape_global.x == shape_total.x) {
+        store_file(data, path, 0, shape_total.z*shape_total.y*shape_total.x);
         return;
     }
 
     FILE *fp = open_file_write<T>(path);
+    fseek(fp, (range.z_start*strides_total.z + range.y_start*strides_total.y + range.x_start*strides_total.x)*sizeof(T), SEEK_SET);
+    for (int64_t z = 0; z < sizes_global.z; z++) {
+        for (int64_t y = 0; y < sizes_global.y; y++) {
+            int64_t n = fwrite((char *) &data[(z+offset_global.z)*strides_global.z + (y+offset_global.y)*strides_global.y + offset_global.x], sizeof(T), sizes_global.x, fp);
+            fseek(fp, (strides_total.y - sizes_global.x)*sizeof(T), SEEK_CUR);
         }
-        fseek(fp, (strides_global.y - sizes_local.y)*strides_global.y*sizeof(T), SEEK_CUR);
+        fseek(fp, ((strides_total.y - sizes_global.y)*strides_total.y)*sizeof(T), SEEK_CUR);
     }
     fclose(fp);
 }

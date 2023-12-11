@@ -213,21 +213,21 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
             for (int64_t global_block_y = 0; global_block_y < global_blocks_y; global_block_y++) {
                 for (int64_t global_block_x = 0; global_block_x < global_blocks_x; global_block_x++) {
                     // Read the block
-                    const idx3drange global_range = {
+                    const idx3drange global_range_in = {
                         std::max((global_block_z*Nz_global)-R, (int64_t) 0), std::min((global_block_z+1)*Nz_global+R, Nz_total),
                         std::max((global_block_y*Ny_global)-R, (int64_t) 0), std::min((global_block_y+1)*Ny_global+R, Ny_total),
                         std::max((global_block_x*Nx_global)-R, (int64_t) 0), std::min((global_block_x+1)*Nx_global+R, Nx_total)
                     };
-                    const idx3d global_offset = {
-                        global_range.z_start == 0 ? R : 0,
-                        global_range.y_start == 0 ? R : 0,
-                        global_range.x_start == 0 ? R : 0
+                    const idx3d global_offset_in = {
+                        global_range_in.z_start == 0 ? R : 0,
+                        global_range_in.y_start == 0 ? R : 0,
+                        global_range_in.x_start == 0 ? R : 0
                     };
 
                     // Ensure padding
                     memset(input, 0, disk_global_flat_size);
 
-                    load_file_strided(input, iter_input, total_shape, global_shape, global_range, global_offset);
+                    load_file_strided(input, iter_input, total_shape, global_shape, global_range_in, global_offset_in);
 
                     //#pragma omp parallel for schedule(static) collapse(3)
                     for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
@@ -250,13 +250,21 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
                                     diffusion_core(d_input,  d_kernel, d_output, 2);
                                     illuminate(d_mask, d_output);
                                 }
+
                                 // Copy data back to host
                                 stage_to_host(output, d_output, local_range);
                             }
                         }
                     }
 
-                    store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset);
+                    const idx3drange global_range_out = {
+                        global_block_z*Nz_global, (global_block_z+1)*Nz_global,
+                        global_block_y*Ny_global, (global_block_y+1)*Ny_global,
+                        global_block_x*Nx_global, (global_block_x+1)*Nx_global
+                    };
+                    const idx3d global_offset_out = { R, R, R };
+
+                    store_file_strided(output, iter_output, total_shape, global_shape, global_range_out, global_offset_out);
                 }
             }
         }
