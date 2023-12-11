@@ -37,19 +37,15 @@ typedef std::vector<std::unordered_set<int64_t>> mapping;
 typedef uint16_t voxel_type;
 
 // Constants
+constexpr idx3d local_shape = { 256, 256, 256};
+
+// Number of devices to use
+constexpr int64_t N_DEVICES = 1;
+
+// Number of streams to use per device
+constexpr int64_t N_STREAMS = 1;
+
 constexpr int64_t
-    // On disk parameters for generated input
-    Nz_total = 1024,
-    Ny_total = 1024,
-    Nx_total = 1024,
-    // Out-of-core main memory parameters
-    Nz_global = Nz_total / 4,
-    Ny_global = Ny_total,
-    Nx_global = Nx_total,
-    // Out-of-core GPU memory parameters
-    Nz_local = 256,
-    Ny_local = 256,
-    Nx_local = 256,
     // Input image generation parameters
     C = 4,
     // Filesystem block size in bytes. Needed for O_DIRECT.

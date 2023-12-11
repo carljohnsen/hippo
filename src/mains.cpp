@@ -2,10 +2,13 @@
 
 // This file contains main functions for testing the individual parts of the library, without having to compile to Python.
 
-void verify_diffusion() {
-    assert(R < Nx_total && R < Ny_total && R < Nz_total && "R must be smaller than the total block size");
-    assert(R < Nx_global && R < Ny_global && R < Nz_global && "R must be smaller than the global block size");
-    assert(R < Nx_local && R < Ny_local && R < Nz_local && "R must be smaller than the local block size");
+void verify_diffusion(const idx3d &total_shape, const idx3d &global_shape) {
+    constexpr float SIGMA = 5.0f;
+    constexpr int64_t R = (int64_t) (4.0f * SIGMA);
+
+    assert(R < total_shape.z && R < total_shape.y && R < total_shape.x && "R must be smaller than the total block size");
+    assert(R < global_shape.z && R < global_shape.y && R < global_shape.x && "R must be smaller than the global block size");
+    assert(R < local_shape.z && R < local_shape.y && R < local_shape.x && "R must be smaller than the local block size");
 
     // Define the vectors
     std::vector<float> kernel(R*2+1);
@@ -20,10 +23,14 @@ void verify_diffusion() {
     }
     write_pgm("output/kernel.pgm", kernel, R*2+1, 1);
 
-    diffusion(input_filename, kernel, output_filename);
+    diffusion(input_filename, kernel, output_filename, total_shape, global_shape, 1);
 }
 
 int main() {
-    verify_diffusion();
+    constexpr idx3d
+        total_shape = { 1024, 1024, 1024 },
+        global_shape = { 256, total_shape.y, total_shape.x };
+
+    verify_diffusion(total_shape, global_shape);
     return 0;
 }
