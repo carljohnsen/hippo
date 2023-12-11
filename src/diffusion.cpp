@@ -1,6 +1,6 @@
 #include "diffusion.hpp"
 
-void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
+void diffusion_core(const float *__restrict__ input, const float *__restrict__ kernel, float *__restrict__ output, const int64_t dim) {
     #pragma omp target teams distribute parallel for collapse(3)
     for (int64_t i = 0; i < Nz_local+2*R; i++) {
         for (int64_t j = 0; j < Ny_local+2*R; j++) {
@@ -29,7 +29,7 @@ void diffusion_core(float *input, float *kernel, float *output, int64_t dim) {
     }
 }
 
-void illuminate(bool *mask, float *output) {
+void illuminate(const bool *__restrict__ mask, float *__restrict__ output) {
     #pragma omp target teams distribute parallel for
     for (int64_t i = 0; i < LOCAL_FLAT_SIZE; i++) {
         if (mask[i]) {
@@ -45,7 +45,7 @@ void store_mask(const float *__restrict__ input, bool *__restrict__ mask) {
     }
 }
 
-void stage_to_device(float *stage, float *src, idx3drange &range) {
+void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, const idx3drange &range) {
     auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
     start_z = std::max(start_z-R, (int64_t) 0);
     start_y = std::max(start_y-R, (int64_t) 0);
@@ -78,7 +78,7 @@ void stage_to_device(float *stage, float *src, idx3drange &range) {
     }
 }
 
-void stage_to_host(float *dst, float *stage, idx3drange &range) {
+void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, const idx3drange &range) {
     auto [start_z, end_z, start_y, end_y, start_x, end_x] = range;
     end_z   = std::min(end_z, Nz_global+2*R);
     end_y   = std::min(end_y, Ny_global+2*R);
@@ -106,7 +106,7 @@ void stage_to_host(float *dst, float *stage, idx3drange &range) {
     }
 }
 
-void convert_float_to_uint8(std::string &src, std::string &dst) {
+void convert_float_to_uint8(const std::string &src, const std::string &dst) {
     const int64_t chunk_size = 4096;
 
     // Start timing
@@ -137,7 +137,7 @@ void convert_float_to_uint8(std::string &src, std::string &dst) {
     std::cout << "Converting float to uint8 took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
-void convert_uint8_to_float(std::string &src, std::string &dst) {
+void convert_uint8_to_float(const std::string &src, const std::string &dst) {
     const int64_t chunk_size = 1024;
 
     // Start timing
@@ -159,7 +159,7 @@ void convert_uint8_to_float(std::string &src, std::string &dst) {
     std::cout << "Converting uint8 to float took " << duration.count() << " seconds at " << (TOTAL_FLAT_SIZE*sizeof(float))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
-void diffusion(std::string &input_file, std::vector<float>& kernel, std::string &output_file) {
+void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file) {
     auto start = std::chrono::high_resolution_clock::now();
 
     std::string

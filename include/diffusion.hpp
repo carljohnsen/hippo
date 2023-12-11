@@ -27,13 +27,13 @@ constexpr int64_t N_DEVICES = 1;
 // Number of streams to use per device
 constexpr int64_t N_STREAMS = 1;
 
-void convert_float_to_uint8(std::string &src, std::string &dst);
-void convert_uint8_to_float(std::string &src, std::string &dst);
-void diffusion(std::string &input_file, std::vector<float>& kernel, std::string &output_file);
-void diffusion_core(float *input, float *kernel, float *output, int64_t dim);
-void illuminate(bool *mask, float *output);
+void convert_float_to_uint8(const std::string &src, const std::string &dst);
+void convert_uint8_to_float(const std::string &src, const std::string &dst);
+void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file);
+void diffusion_core(const float *__restrict__ input, const float *__restrict__ kernel, float *__restrict__ output, const int64_t dim);
+void illuminate(const bool *__restrict__ mask, float *__restrict__ output);
 void store_mask(const float *__restrict__ input, bool *__restrict__ mask);
-void stage_to_device(float *stage, float *src, idx3drange &range);
-void stage_to_host(float *dst, float *stage, idx3drange &range);
+void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, const idx3drange &range);
+void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, const idx3drange &range);
 
 #endif // DIFFUSION_HPP
