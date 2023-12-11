@@ -37,7 +37,7 @@ typedef std::vector<std::unordered_set<int64_t>> mapping;
 typedef uint16_t voxel_type;
 
 // Constants
-constexpr idx3d local_shape = { 256, 256, 256};
+constexpr idx3d local_shape = { 64, 64, 64 };
 
 // Number of devices to use
 constexpr int64_t N_DEVICES = 1;
@@ -78,24 +78,25 @@ FILE* open_file_write(const std::string &path) {
 
 // Loads `n_elements` of a file located at `path` on disk at `offset` elements from the beginning of the file, into a vector of type `T`.
 template <typename T>
-void load_file(T *dst, const std::string &path, const int64_t offset, const int64_t n_elements) {
-     // Open the file
+void load_file(T *dst, const std::string &path, const int64_t total_offset, const int64_t n_elements) {
+    // Open the file
     FILE *fp = open_file_write<T>(path);
 
     // Calculate the aligned start and end positions
     int64_t
-        start_pos = offset*sizeof(T),
-        end_pos = (offset+n_elements)*sizeof(T),
+        start_pos = total_offset*sizeof(T),
+        end_pos = (total_offset+n_elements)*sizeof(T),
         aligned_start = (start_pos / disk_block_size) * disk_block_size,
         aligned_end = ((end_pos + disk_block_size - 1) / disk_block_size) * disk_block_size,
-        aligned_size = aligned_end - aligned_start;
+        aligned_size = aligned_end - aligned_start,
+        aligned_n_elements = aligned_size / sizeof(T);
 
     // Allocate a buffer for the write
     T *buffer = (T *) aligned_alloc(disk_block_size, aligned_size);
 
     // Read the buffer from disk
     fseek(fp, aligned_start, SEEK_SET);
-    fread((char *) buffer, sizeof(T), aligned_size, fp);
+    fread((char *) buffer, sizeof(T), aligned_n_elements, fp);
 
     // Copy the data to the destination
     memcpy((char *) dst, (char *) buffer + start_pos - aligned_start, n_elements*sizeof(T));
@@ -127,7 +128,7 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &shape_total
 
     // If the shape on disk is the same as the shape in memory, just load the entire file
     if (shape_global.y == shape_total.y && shape_global.x == shape_total.x && offset_global.y == 0 && offset_global.x == 0 && range.y_start == 0 && range.x_start == 0 && range.y_end == shape_total.y && range.x_end == shape_total.x) {
-        load_file(dst + offset_global.z*strides_global.z, path, range.z_start*strides_total.z, sizes.z*strides_total.z);
+        load_file(dst + (offset_global.z*strides_global.z), path, range.z_start*strides_total.z, sizes.z*strides_total.z);
         return;
     }
     assert (false && "Not implemented yet :) - After the deadline!");
@@ -158,7 +159,7 @@ template <typename T>
 void load_partial(T *__restrict__ dst, FILE *fp, const int64_t offset, const int64_t n_elements) {
     fseek(fp, offset*sizeof(T), SEEK_SET);
     int64_t n = fread((char *) dst, sizeof(T), n_elements, fp);
-    //assert(n == n_elements && "Failed to read all elements");
+    assert(n == n_elements && "Failed to read all elements");
 }
 
 // Stores `data.size()` elements of `data` into a file located at `path` on disk at `offset` elements from the beginning of the file.
@@ -187,7 +188,8 @@ void store_file(const T *data, const std::string &path, const int64_t offset, co
         end_pos = (offset+n_elements)*sizeof(T),
         aligned_start = (start_pos / disk_block_size) * disk_block_size,
         aligned_end = ((end_pos + disk_block_size - 1) / disk_block_size) * disk_block_size,
-        aligned_size = aligned_end - aligned_start;
+        aligned_size = aligned_end - aligned_start,
+        aligned_n_elements = aligned_size / sizeof(T);
 
     // Allocate a buffer for the write
     T *buffer = (T *) aligned_alloc(disk_block_size, aligned_size);
@@ -211,7 +213,8 @@ void store_file(const T *data, const std::string &path, const int64_t offset, co
 
     // Write the buffer to disk
     fseek(fp, aligned_start, SEEK_SET);
-    int64_t n = fwrite((char *) buffer, sizeof(T), aligned_size/sizeof(T), fp);
+    int64_t n = fwrite((char *) buffer, sizeof(T), aligned_n_elements, fp);
+    assert (n == aligned_n_elements && "Failed to write all elements");
 
     // Free the buffer and close the file
     free(buffer);
@@ -240,6 +243,7 @@ void store_file_strided(const T *data, const std::string &path, const idx3d &sha
     for (int64_t z = 0; z < sizes.z; z++) {
         for (int64_t y = 0; y < sizes.y; y++) {
             int64_t n = fwrite((char *) &data[(z+offset_global.z)*strides_global.z + (y+offset_global.y)*strides_global.y + (0+offset_global.x)*strides_global.x], sizeof(T), sizes.x, fp);
+            assert (n == sizes.x && "Failed to write all elements");
             fseek(fp, (strides_total.y - sizes.x)*sizeof(T), SEEK_CUR);
         }
         fseek(fp, (strides_total.z - sizes.y*strides_total.y) * sizeof(T), SEEK_CUR);
@@ -256,7 +260,7 @@ template <typename T>
 void store_partial(const T *__restrict__ src, FILE *fp, const int64_t offset, const int64_t n_elements) {
     fseek(fp, offset*sizeof(T), SEEK_SET);
     int64_t n = fwrite((char *) src, sizeof(T), n_elements, fp);
-    //assert(n == n_elements && "Failed to write all elements");
+    assert(n == n_elements && "Failed to write all elements");
 }
 
 #endif // HIPPO_HPP

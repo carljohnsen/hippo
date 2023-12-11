@@ -52,7 +52,7 @@ void stage_to_device(float *__restrict__ stage, const float *__restrict__ src, c
     const int64_t
         radius = kernel_size / 2,
         padding = kernel_size - 1,
-        local_flat_size = (local_shape.z+padding) * local_shape.y * local_shape.x,
+        local_flat_size = (local_shape.z+padding) * (local_shape.y+padding) * (local_shape.x+padding),
         disk_local_flat_size = ((local_flat_size*sizeof(float) / disk_block_size) + (local_flat_size*sizeof(float) % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
     const idx3d
         start = {
@@ -231,6 +231,7 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
     //omp_set_num_threads(N_DEVICES*N_STREAMS);
 
     #pragma omp target enter data map(to: d_kernel[0:kernel_size])
+    {
     for (int64_t reps = 0; reps < repititions; reps++) {
         std::string
             iter_input  = reps % 2 == 0 ? temp0 : temp1,
@@ -293,8 +294,13 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
 
             const idx3d global_offset_out = { radius, 0, 0 };
 
+            auto store_start = std::chrono::high_resolution_clock::now();
             store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
+            auto store_end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> store_duration = store_end - store_start;
+            std::cout << "Storing took " << store_duration.count() << " seconds at " << disk_global_flat_size/store_duration.count()/1e9 << " GB/s" << std::endl;
         }
+    }
     }
 
     convert_float_to_uint8(repititions % 2 == 0 ? temp0 : temp1, output_file, total_flat_size);

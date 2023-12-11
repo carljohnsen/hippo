@@ -23,7 +23,7 @@ void verify_diffusion(const idx3d &total_shape, const idx3d &global_shape) {
     }
     write_pgm("output/kernel.pgm", kernel, R*2+1, 1);
 
-    diffusion(input_filename, kernel, output_filename, total_shape, global_shape, 1);
+    diffusion(input_filename, kernel, output_filename, total_shape, global_shape, 10);
 }
 
 int main() {
