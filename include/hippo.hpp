@@ -14,10 +14,9 @@
 #include <iostream>
 #include <list>
 #include <omp.h>
-// TODO pybind11 later on :)
-//#include <pybind11/pybind11.h>
-//#include <pybind11/stl.h>
-//#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include <tuple>
 #include <unordered_set>
 #include <vector>
@@ -31,9 +30,8 @@ struct idx3drange {
     int64_t z_start, z_end, y_start, y_end, x_start, x_end;
 };
 typedef std::vector<std::unordered_set<int64_t>> mapping;
-// TODO pybind11 later on :)
-//template <typename T>
-//using np_array = pybind11::array_t<T, pybind11::array::c_style | pybind11::array::forcecast>;
+template <typename T>
+using np_array = pybind11::array_t<T, pybind11::array::c_style | pybind11::array::forcecast>;
 typedef uint16_t voxel_type;
 
 // Constants
