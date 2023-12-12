@@ -126,9 +126,6 @@ void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, con
 }
 
 void convert_float_to_uint8(const std::string &src, const std::string &dst, const int64_t total_flat_size) {
-    // Start timing
-    auto start = std::chrono::high_resolution_clock::now();
-
     int64_t chunk_size = 2048*disk_block_size;
     FILE *file_src = open_file_read<float>(src);
     FILE *file_dst = open_file_write<uint8_t>(dst);
@@ -149,17 +146,9 @@ void convert_float_to_uint8(const std::string &src, const std::string &dst, cons
     free(buffer_src);
     fclose(file_dst);
     fclose(file_src);
-
-    // End timing
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Converting float to uint8 took " << duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
 void convert_uint8_to_float(const std::string &src, const std::string &dst, const int64_t total_flat_size) {
-    // Start timing
-    auto start = std::chrono::high_resolution_clock::now();
-
     int64_t chunk_size = 2048*disk_block_size;
     FILE *file_src = open_file_read<uint8_t>(src);
     FILE *file_dst = open_file_write<float>(dst);
@@ -180,14 +169,9 @@ void convert_uint8_to_float(const std::string &src, const std::string &dst, cons
     free(buffer_src);
     fclose(file_dst);
     fclose(file_src);
-
-    // End timing
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Converting uint8 to float took " << duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/duration.count()/1e9 << " GB/s" << std::endl;
 }
 
-void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file, const idx3d &total_shape, const idx3d &global_shape, const int64_t repititions) {
+void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file, const idx3d &total_shape, const idx3d &global_shape, const int64_t repititions, const bool verbose) {
     auto start = std::chrono::high_resolution_clock::now();
 
     std::string
@@ -211,12 +195,14 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
         disk_mask_flat_size = ((local_flat_size*sizeof(bool) / disk_block_size) + (local_flat_size*sizeof(bool) % disk_block_size == 0 ? 0 : 1)) * disk_block_size,
         disk_kernel_flat_size = ((kernel_size / disk_block_size) + (kernel_size % disk_block_size == 0 ? 0 : 1)) * disk_block_size;
 
-    // Print the number of blocks
-    std::cout << "Global blocks: " << global_blocks << std::endl;
-    std::cout << "Local blocks: " << local_blocks_z << "x" << local_blocks_y << "x" << local_blocks_x << std::endl;
+    if (verbose) {
+        // Print the number of blocks
+        std::cout << "Global blocks: " << global_blocks << std::endl;
+        std::cout << "Local blocks: " << local_blocks_z << "x" << local_blocks_y << "x" << local_blocks_x << std::endl;
+    }
 
     // Allocate memory. Aligned to block_size, and should overallocate to ensure alignment.
-    // TODO since the I/O functions handle alignment with buffers, the allocations doesn't need to be aligned.
+    // TODO since the I/O functions handle alignment with buffers, the allocations doesn't need to be aligned. Although, it might make sense to do so anyways, since this can avoid the need for a buffer. However, checking this is complicated, and is left for later.
     float
         *input = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
         *output = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
@@ -226,84 +212,103 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
     bool *d_mask = (bool *) aligned_alloc(disk_block_size, disk_mask_flat_size);
 
     memcpy(d_kernel, &kernel[0], kernel.size()*sizeof(float));
+
+    // Start timing
+    auto start_f2u = std::chrono::high_resolution_clock::now();
     convert_uint8_to_float(input_file, temp0, total_flat_size);
+    auto end_f2u = std::chrono::high_resolution_clock::now();
+    if (verbose) {
+        std::chrono::duration<double> f2u_duration = end_f2u - start_f2u;
+        std::cout << "Converting uint8 to float took " << f2u_duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/f2u_duration.count()/1e9 << " GB/s" << std::endl;
+    }
 
     //omp_set_num_threads(N_DEVICES*N_STREAMS);
 
     #pragma omp target enter data map(to: d_kernel[0:kernel_size])
     {
-    for (int64_t reps = 0; reps < repititions; reps++) {
-        std::string
-            iter_input  = reps % 2 == 0 ? temp0 : temp1,
-            iter_output = reps % 2 == 0 ? temp1 : temp0;
-        for (int64_t global_block_i = 0; global_block_i < global_blocks; global_block_i++) {
-            const idx3drange global_range = {
-                global_block_i*global_shape.z, std::min((global_block_i+1)*global_shape.z, total_shape.z),
-                0, total_shape.y,
-                0, total_shape.x
-            };
+        for (int64_t reps = 0; reps < repititions; reps++) {
+            std::string
+                iter_input  = reps % 2 == 0 ? temp0 : temp1,
+                iter_output = reps % 2 == 0 ? temp1 : temp0;
+            for (int64_t global_block_i = 0; global_block_i < global_blocks; global_block_i++) {
+                const idx3drange global_range = {
+                    global_block_i*global_shape.z, std::min((global_block_i+1)*global_shape.z, total_shape.z),
+                    0, total_shape.y,
+                    0, total_shape.x
+                };
 
-            // Read the block
-            const idx3drange global_range_in = { // TODO These numbers are currently redundant, but will be needed once true 3d is implemented
-                std::max(global_range.z_start-radius, (int64_t) 0), std::min(global_range.z_end+radius, total_shape.z),
-                std::max(global_range.y_start-radius, (int64_t) 0), std::min(global_range.y_end+radius, total_shape.y),
-                std::max(global_range.x_start-radius, (int64_t) 0), std::min(global_range.x_end+radius, total_shape.x)
-            };
-            const idx3d global_offset_in = {
-                global_range_in.z_start == 0 ? radius : 0,
-                0,
-                0
-            };
+                // Read the block
+                const idx3drange global_range_in = { // TODO These numbers are currently redundant, but will be needed once true 3d is implemented
+                    std::max(global_range.z_start-radius, (int64_t) 0), std::min(global_range.z_end+radius, total_shape.z),
+                    std::max(global_range.y_start-radius, (int64_t) 0), std::min(global_range.y_end+radius, total_shape.y),
+                    std::max(global_range.x_start-radius, (int64_t) 0), std::min(global_range.x_end+radius, total_shape.x)
+                };
+                const idx3d global_offset_in = {
+                    global_range_in.z_start == 0 ? radius : 0,
+                    0,
+                    0
+                };
 
-            // Ensure padding
-            memset(input, 0, disk_global_flat_size);
+                // Ensure padding
+                memset(input, 0, disk_global_flat_size);
 
-            auto load_start = std::chrono::high_resolution_clock::now();
-            load_file_strided(input, iter_input, total_shape, global_shape, global_range_in, global_offset_in);
-            auto load_end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> load_duration = load_end - load_start;
-            std::cout << "Loading took " << load_duration.count() << " seconds at " << disk_global_flat_size/load_duration.count()/1e9 << " GB/s" << std::endl;
+                auto load_start = std::chrono::high_resolution_clock::now();
+                load_file_strided(input, iter_input, total_shape, global_shape, global_range_in, global_offset_in);
+                auto load_end = std::chrono::high_resolution_clock::now();
+                if (verbose) {
+                    std::chrono::duration<double> load_duration = load_end - load_start;
+                    std::cout << "Loading took " << load_duration.count() << " seconds at " << disk_global_flat_size/load_duration.count()/1e9 << " GB/s" << std::endl;
+                }
 
-            //#pragma omp parallel for schedule(static) collapse(3)
-            for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
-                for (int64_t local_block_y = 0; local_block_y < local_blocks_y; local_block_y++) {
-                    for (int64_t local_block_x = 0; local_block_x < local_blocks_x; local_block_x++) {
-                        idx3drange local_range = {
-                            local_block_z*local_shape.z, (local_block_z+1)*local_shape.z,
-                            local_block_y*local_shape.y, (local_block_y+1)*local_shape.y,
-                            local_block_x*local_shape.x, (local_block_x+1)*local_shape.x
-                        };
+                //#pragma omp parallel for schedule(static) collapse(3)
+                for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
+                    for (int64_t local_block_y = 0; local_block_y < local_blocks_y; local_block_y++) {
+                        for (int64_t local_block_x = 0; local_block_x < local_blocks_x; local_block_x++) {
+                            idx3drange local_range = {
+                                local_block_z*local_shape.z, (local_block_z+1)*local_shape.z,
+                                local_block_y*local_shape.y, (local_block_y+1)*local_shape.y,
+                                local_block_x*local_shape.x, (local_block_x+1)*local_shape.x
+                            };
 
-                        // Copy data to device
-                        stage_to_device(d_input, input, local_range, global_shape, kernel_size);
+                            // Copy data to device
+                            stage_to_device(d_input, input, local_range, global_shape, kernel_size);
 
-                        #pragma omp target data map(to: d_input[0:local_flat_size]) map(alloc: d_mask[0:local_flat_size]) map(from: d_output[0:local_flat_size])
-                        {
-                            store_mask(d_input, d_mask, local_flat_size);
-                            diffusion_core(d_input,  d_kernel, d_output, 0, kernel_size);
-                            diffusion_core(d_output, d_kernel, d_input,  1, kernel_size);
-                            diffusion_core(d_input,  d_kernel, d_output, 2, kernel_size);
-                            illuminate(d_mask, d_output, local_flat_size);
+                            #pragma omp target data map(to: d_input[0:local_flat_size]) map(alloc: d_mask[0:local_flat_size]) map(from: d_output[0:local_flat_size])
+                            {
+                                store_mask(d_input, d_mask, local_flat_size);
+                                diffusion_core(d_input,  d_kernel, d_output, 0, kernel_size);
+                                diffusion_core(d_output, d_kernel, d_input,  1, kernel_size);
+                                diffusion_core(d_input,  d_kernel, d_output, 2, kernel_size);
+                                illuminate(d_mask, d_output, local_flat_size);
+                            }
+
+                            // Copy data back to host
+                            stage_to_host(output, d_output, local_range, global_shape, kernel_size);
                         }
-
-                        // Copy data back to host
-                        stage_to_host(output, d_output, local_range, global_shape, kernel_size);
                     }
                 }
+
+                const idx3d global_offset_out = { radius, 0, 0 };
+
+                auto store_start = std::chrono::high_resolution_clock::now();
+                store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
+                auto store_end = std::chrono::high_resolution_clock::now();
+                if (verbose) {
+                    std::chrono::duration<double> store_duration = store_end - store_start;
+                    std::cout << "Storing took " << store_duration.count() << " seconds at " << disk_global_flat_size/store_duration.count()/1e9 << " GB/s" << std::endl;
+                }
             }
-
-            const idx3d global_offset_out = { radius, 0, 0 };
-
-            auto store_start = std::chrono::high_resolution_clock::now();
-            store_file_strided(output, iter_output, total_shape, global_shape, global_range, global_offset_out);
-            auto store_end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> store_duration = store_end - store_start;
-            std::cout << "Storing took " << store_duration.count() << " seconds at " << disk_global_flat_size/store_duration.count()/1e9 << " GB/s" << std::endl;
         }
     }
-    }
 
+    // Start timing
+    auto start_u2f = std::chrono::high_resolution_clock::now();
     convert_float_to_uint8(repititions % 2 == 0 ? temp0 : temp1, output_file, total_flat_size);
+    auto end_u2f = std::chrono::high_resolution_clock::now();
+    if (verbose) {
+        std::chrono::duration<double> u2f_duration = end_u2f - start_u2f;
+        std::cout << "Converting float to uint8 took " << u2f_duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/u2f_duration.count()/1e9 << " GB/s" << std::endl;
+    }
 
     free(d_mask);
     free(d_kernel);
@@ -312,8 +317,9 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
     free(output);
     free(input);
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end-start;
-
-    std::cout << "Diffusion took " << duration.count() << " seconds at " << (total_flat_size*sizeof(float)*repititions)/duration.count()/1e9 << " GB/s" << std::endl;
+    if (verbose) {
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end-start;
+        std::cout << "Diffusion took " << duration.count() << " seconds at " << (total_flat_size*sizeof(float)*repititions)/duration.count()/1e9 << " GB/s" << std::endl;
+    }
 }
