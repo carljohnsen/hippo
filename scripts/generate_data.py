@@ -2,19 +2,13 @@ import helpers
 import numpy as np
 import sys
 
-if __name__ == '__main__':
-    # TODO argparse?
-    outpath = sys.argv[1] if len(sys.argv) > 1 else 'data/input_img.uint8'
-
+def generate_input_img(outpath, N = (1024, 1024, 1024)):
     if not outpath.endswith('.uint8'):
         print ('Warning: file will be saved as a raw uint8 file, but the extension is not .uint8')
 
     consts = helpers.parse_header('include/hippo.hpp')
 
-    #Nz = int(consts['Nz_total'])
-    #Ny = int(consts['Ny_total'])
-    #Nx = int(consts['Nx_total'])
-    Nz, Ny, Nx = 1024, 1024, 1024
+    Nz, Ny, Nx = N
 
     img = np.zeros((Nz, Ny, Nx), dtype=np.uint8)
 
@@ -49,3 +43,7 @@ if __name__ == '__main__':
 
     # Save the image as a raw uint8 file
     img.tofile(outpath)
+
+if __name__ == '__main__':
+    # TODO argparse?
+    outpath = sys.argv[1] if len(sys.argv) > 1 else 'data/input_img.uint8'

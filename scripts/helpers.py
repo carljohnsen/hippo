@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-def parse_header(path):
+def parse_header(path, verbose=False):
     # Read constants from header file. They won't all be used, but it's easier to
     # just read them all and then pick the ones we want.
     consts = dict()
@@ -21,21 +21,24 @@ def parse_header(path):
             eq_sign = tokens.index('=')
             consts[tokens[eq_sign-1]] = tokens[eq_sign+1].strip(',;')
 
-    print (consts)
+    if verbose:
+        print (consts)
     return consts
 
 # Assumes that the input is a cube
-def plot_middle_planes(inpath, dtype, outpath):
+def plot_middle_planes(inpath, dtype, outpath, verbose=False):
     with open(inpath) as f:
         img = np.fromfile(f, dtype=dtype)
-        print (f'Read {img.shape} from {inpath}')
-        print (f'Max value: {img.max()}')
-        print (f'All zeros: {(img == 0).all()}')
         N = int(np.ceil(img.shape[0] ** (1/3)))
-        print (f'Trying to reshape to {N}^3')
+        if verbose:
+            print (f'Read {img.shape} from {inpath}')
+            print (f'Max value: {img.max()}')
+            print (f'All zeros: {(img == 0).all()}')
+            print (f'Trying to reshape to {N}^3')
         img = img.reshape((N, N, N))
         img = np.hstack((img[N//2, :, :], img[:, N//2, :], img[:, :, N//2]))
         if dtype == np.float32:
             img *= 255 # Convert 0-1 to 0-255
         cv2.imwrite(outpath, img)
-        print (f'Wrote image to {outpath}')
+        if verbose:
+            print (f'Wrote image to {outpath}')
