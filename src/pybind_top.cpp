@@ -15,6 +15,10 @@ namespace python_api {
         // Call diffusion function in the global namespace
         diffusion(input_file, kernel_vec, output_file, total_shape_, global_shape_, repititions);
     }
+
+    void cc() {
+        // TODO maxibone/pre-cleanup-src/bh-kernels/ndi_label.c dropin for ndi_label
+    }
 }
 
 PYBIND11_MODULE(hippo, m) {

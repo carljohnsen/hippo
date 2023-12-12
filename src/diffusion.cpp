@@ -4,7 +4,7 @@ void diffusion_core(const float *__restrict__ input, const float *__restrict__ k
     const int64_t
         radius = kernel_size / 2,
         padding = kernel_size - 1;
-    #pragma omp target teams distribute parallel for collapse(3)
+    #pragma omp target teams distribute parallel for collapse(3) device(omp_get_thread_num() % n_devices)
     for (int64_t i = 0; i < local_shape.z+padding; i++) {
         for (int64_t j = 0; j < local_shape.y+padding; j++) {
             for (int64_t k = 0; k < local_shape.x+padding; k++) {
@@ -33,7 +33,7 @@ void diffusion_core(const float *__restrict__ input, const float *__restrict__ k
 }
 
 void illuminate(const bool *__restrict__ mask, float *__restrict__ output, const int64_t local_flat_size) {
-    #pragma omp target teams distribute parallel for
+    #pragma omp target teams distribute parallel for device(omp_get_thread_num() % n_devices)
     for (int64_t i = 0; i < local_flat_size; i++) {
         if (mask[i]) {
             output[i] = 1.0f;
@@ -42,7 +42,7 @@ void illuminate(const bool *__restrict__ mask, float *__restrict__ output, const
 }
 
 void store_mask(const float *__restrict__ input, bool *__restrict__ mask, const int64_t local_flat_size) {
-    #pragma omp target teams distribute parallel for
+    #pragma omp target teams distribute parallel for device(omp_get_thread_num() % n_devices)
     for (int64_t i = 0; i < local_flat_size; i++) {
         mask[i] = input[i] == 1.0f;
     }
@@ -205,13 +205,30 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
     // TODO since the I/O functions handle alignment with buffers, the allocations doesn't need to be aligned. Although, it might make sense to do so anyways, since this can avoid the need for a buffer. However, checking this is complicated, and is left for later.
     float
         *input = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
-        *output = (float *) aligned_alloc(disk_block_size, disk_global_flat_size),
-        *d_input = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
-        *d_output = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
-        *d_kernel = (float *) aligned_alloc(disk_block_size, disk_kernel_flat_size);
-    bool *d_mask = (bool *) aligned_alloc(disk_block_size, disk_mask_flat_size);
+        *output = (float *) aligned_alloc(disk_block_size, disk_global_flat_size);
+    // For single device / queue
+    //float
+    //    *d_input = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
+    //    *d_output = (float *) aligned_alloc(disk_block_size, disk_local_flat_size),
+    //    *d_kernel = (float *) aligned_alloc(disk_block_size, disk_kernel_flat_size);
+    //bool *d_mask = (bool *) aligned_alloc(disk_block_size, disk_mask_flat_size);
+    //memcpy(d_kernel, &kernel[0], kernel.size()*sizeof(float));
 
-    memcpy(d_kernel, &kernel[0], kernel.size()*sizeof(float));
+    // For multiple devices / queues
+    constexpr int64_t total_queues = n_devices * n_streams;
+    float
+        **d_inputs = (float **) malloc(total_queues*sizeof(float *)),
+        **d_outputs = (float **) malloc(total_queues*sizeof(float *)),
+        **d_kernels = (float **) malloc(total_queues*sizeof(float *));
+    bool **d_masks = (bool **) malloc(total_queues*sizeof(bool *));
+
+    for (int64_t queue = 0; queue < total_queues; queue++) {
+        d_inputs[queue] = (float *) aligned_alloc(disk_block_size, disk_local_flat_size);
+        d_outputs[queue] = (float *) aligned_alloc(disk_block_size, disk_local_flat_size);
+        d_kernels[queue] = (float *) aligned_alloc(disk_block_size, disk_kernel_flat_size);
+        d_masks[queue] = (bool *) aligned_alloc(disk_block_size, disk_mask_flat_size);
+        memcpy(d_kernels[queue], &kernel[0], kernel.size()*sizeof(float));
+    }
 
     // Start timing
     auto start_f2u = std::chrono::high_resolution_clock::now();
@@ -222,9 +239,10 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
         std::cout << "Converting uint8 to float took " << f2u_duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/f2u_duration.count()/1e9 << " GB/s" << std::endl;
     }
 
-    //omp_set_num_threads(N_DEVICES*N_STREAMS);
-
-    #pragma omp target enter data map(to: d_kernel[0:kernel_size])
+    // Copy kernel to devices
+    for (int64_t i = 0; i < n_devices; i++) {
+        #pragma omp target enter data map(to: d_kernels[i][0:kernel_size]) device(i)
+    }
     {
         for (int64_t reps = 0; reps < repititions; reps++) {
             std::string
@@ -260,10 +278,17 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
                     std::cout << "Loading took " << load_duration.count() << " seconds at " << disk_global_flat_size/load_duration.count()/1e9 << " GB/s" << std::endl;
                 }
 
-                //#pragma omp parallel for schedule(static) collapse(3)
+                #pragma omp parallel for schedule(static) collapse(3) num_threads(n_devices)
                 for (int64_t local_block_z = 0; local_block_z < local_blocks_z; local_block_z++) {
                     for (int64_t local_block_y = 0; local_block_y < local_blocks_y; local_block_y++) {
                         for (int64_t local_block_x = 0; local_block_x < local_blocks_x; local_block_x++) {
+                            int64_t tid = omp_get_thread_num();
+                            float
+                                *d_input = d_inputs[tid],
+                                *d_output = d_outputs[tid],
+                                *d_kernel = d_kernels[tid];
+                            bool *d_mask = d_masks[tid];
+
                             idx3drange local_range = {
                                 local_block_z*local_shape.z, (local_block_z+1)*local_shape.z,
                                 local_block_y*local_shape.y, (local_block_y+1)*local_shape.y,
@@ -273,7 +298,7 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
                             // Copy data to device
                             stage_to_device(d_input, input, local_range, global_shape, kernel_size);
 
-                            #pragma omp target data map(to: d_input[0:local_flat_size]) map(alloc: d_mask[0:local_flat_size]) map(from: d_output[0:local_flat_size])
+                            #pragma omp target data map(to: d_input[0:local_flat_size]) map(alloc: d_mask[0:local_flat_size]) map(from: d_output[0:local_flat_size]) device(omp_get_thread_num() % n_devices)
                             {
                                 store_mask(d_input, d_mask, local_flat_size);
                                 diffusion_core(d_input,  d_kernel, d_output, 0, kernel_size);
@@ -310,10 +335,17 @@ void diffusion(const std::string &input_file, const std::vector<float>& kernel, 
         std::cout << "Converting float to uint8 took " << u2f_duration.count() << " seconds at " << (total_flat_size*(sizeof(float) + sizeof(uint8_t)))/u2f_duration.count()/1e9 << " GB/s" << std::endl;
     }
 
-    free(d_mask);
-    free(d_kernel);
-    free(d_output);
-    free(d_input);
+    // Free memory
+    for (int64_t queue = 0; queue < total_queues; queue++) {
+        free(d_inputs[queue]);
+        free(d_outputs[queue]);
+        free(d_kernels[queue]);
+        free(d_masks[queue]);
+    }
+    free(d_masks);
+    free(d_kernels);
+    free(d_outputs);
+    free(d_inputs);
     free(output);
     free(input);
 

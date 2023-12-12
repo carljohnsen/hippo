@@ -38,10 +38,10 @@ typedef uint16_t voxel_type;
 constexpr idx3d local_shape = { 64, 64, 64 };
 
 // Number of devices to use
-constexpr int64_t N_DEVICES = 1;
+constexpr int64_t n_devices = 2;
 
-// Number of streams to use per device
-constexpr int64_t N_STREAMS = 1;
+// Number of streams to use per device (TODO: must be 1 for now)
+constexpr int64_t n_streams = 1;
 
 constexpr int64_t
     // Input image generation parameters

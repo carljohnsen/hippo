@@ -19,9 +19,20 @@ def verify_diffusion(): # TODO better output names to correspond to diffusion
     sigma = 5.0
     r = 4.0 * sigma
     padding = int(2*r)
-    total_shape = (256, 256, 256)
+    total_shape = (512, 512, 512)
+    planes_per_gb = int(1024**3 / (total_shape[1] * total_shape[2] * np.dtype(np.float32).itemsize))
+    #global_shape = (planes_per_gb, total_shape[1], total_shape[2])
     global_shape = (total_shape[0]+padding, total_shape[1], total_shape[2])
-    repititions = 5
+    repititions = 1
+
+    # For 1024**3 and planes_per_gb * 1024**2
+    #ndi.gaussian_filter took 264.315 seconds
+    #hippo.diffusion took 20.742 seconds
+    #hippo.diffusion was 12.74 times faster than ndi.gaussian_filter
+    #Average absolute difference: 9.313225746154785e-10
+    #Maximum absolute difference: 1
+    #Minimum absolute difference: 0
+    #Standard deviation of absolute difference: 3.0517578110789142e-05
 
     # File paths
     prefix = 'diffusion'
@@ -35,7 +46,6 @@ def verify_diffusion(): # TODO better output names to correspond to diffusion
     hippo_img_path = f'{output_folder}/{prefix}_hippo.png'
     ndied_img_path = f'{output_folder}/{prefix}_ndied.png'
     diff_img_path = f'{output_folder}/{prefix}_diff.png'
-
 
     # Create a 1D Gaussian
     x = np.arange(-r, r + 1)
