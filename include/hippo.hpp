@@ -87,7 +87,8 @@ void load_file(T *dst, const std::string &path, const int64_t total_offset, cons
 
     // Read the buffer from disk
     fseek(fp, aligned_start, SEEK_SET);
-    fread((char *) buffer, sizeof(T), aligned_n_elements, fp);
+    int64_t n = fread((char *) buffer, sizeof(T), aligned_n_elements, fp);
+    assert (n == aligned_n_elements && "Failed to read all elements");
 
     // Copy the data to the destination
     memcpy((char *) dst, (char *) buffer + start_pos - aligned_start, n_elements*sizeof(T));
@@ -189,14 +190,16 @@ void store_file(const T *data, const std::string &path, const int64_t offset, co
     if (start_pos != aligned_start) {
         // Read the first block
         fseek(fp, aligned_start, SEEK_SET);
-        fread((char *) buffer, sizeof(T), disk_block_size, fp);
+        int64_t n = fread((char *) buffer, sizeof(T), disk_block_size, fp);
+        assert (n == disk_block_size && "Failed to read all elements");
     }
 
     // If the end is not aligned, read the last block
     if (end_pos != aligned_end) {
         // Read the last block
         fseek(fp, aligned_end - disk_block_size, SEEK_SET);
-        fread((char *) buffer + aligned_size - disk_block_size, sizeof(T), disk_block_size, fp);
+        int64_t n = fread((char *) buffer + aligned_size - disk_block_size, sizeof(T), disk_block_size, fp);
+        assert (n == disk_block_size && "Failed to read all elements");
     }
 
     // Copy the data to the buffer
