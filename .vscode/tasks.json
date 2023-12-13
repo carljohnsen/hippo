@@ -4,7 +4,24 @@
         {
             "type": "shell",
             "label": "build mains",
-            "command": "make bin/mains",
+            "command": "make",
+            "args": [
+                "-j",
+                "bin/mains"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "label": "build pybind",
+            "command": "make",
+            "args": [
+                "-j"
+            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
