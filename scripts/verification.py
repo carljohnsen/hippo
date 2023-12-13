@@ -10,9 +10,87 @@ import helpers
 import hippo
 import generate_data
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 import numpy as np
 import os
 import scipy.ndimage as ndi
+
+def verify_connected_components():
+    # Constants
+    total_shape = (512, 512, 512)
+    global_shape = (64, 512, 512)
+    # Assert that total_shape is divisible by global_shape
+    assert total_shape[0] % global_shape[0] == 0
+    n_chunks = total_shape[0] // global_shape[0]
+    # Assert that n_chunks is a power of 2
+    assert (n_chunks & (n_chunks - 1)) == 0
+
+    # File paths
+    prefix = 'connected_components'
+    data_folder = 'data' # Input and output data generated during the run.
+    output_folder = 'output' # Plots generated during the run.
+    input_data_path = f'{data_folder}/{prefix}_input.uint8'
+    input_img_path = f'{output_folder}/{prefix}_input.png'
+    chunk_prefix = f'{data_folder}/{prefix}_'
+    all_data_path = f'{data_folder}/{prefix}_all.int64'
+    ndied_full_path = f'{data_folder}/{prefix}_ndied_full.int64'
+
+    # Generate the input data
+    generate_data.generate_input_img(input_data_path, total_shape)
+    helpers.plot_middle_planes(input_data_path, np.uint8, input_img_path)
+    input_img = np.fromfile(input_data_path, dtype=np.uint8).reshape(total_shape)
+
+    # Run the ndi label
+    start_ndi_full = datetime.datetime.now()
+    input_img = np.fromfile(input_data_path, dtype=np.uint8).reshape(total_shape)
+    ndi_full = ndi.label(input_img, output=np.int64)
+    ndi_full[0].tofile(ndied_full_path)
+    end_ndi_full = datetime.datetime.now()
+    ndi_full_duration = (end_ndi_full - start_ndi_full).total_seconds()
+    print (f'ndi.label took {ndi_full_duration:.03f} seconds')
+
+    # Run the ndi label on chunks
+    start_ndi_chunks = datetime.datetime.now()
+    input_img = np.fromfile(input_data_path, dtype=np.uint8).reshape(total_shape)
+    n_labels = np.empty(n_chunks, dtype=np.int64)
+    for i in range(n_chunks):
+        start = i * global_shape[0]
+        end = (i + 1) * global_shape[0]
+        chunk = input_img[start:end, :, :]
+        chunk_labeled, chunk_n_labels = ndi.label(chunk, output=np.int64)
+        chunk_labeled.tofile(f'{chunk_prefix}{i}.int64')
+        n_labels[i] = chunk_n_labels
+    end_ndi_chunks = datetime.datetime.now()
+    ndi_chunks_duration = (end_ndi_chunks - start_ndi_chunks).total_seconds()
+    print (f'ndi.label on chunks took {ndi_chunks_duration:.03f} seconds')
+
+    # Run the hippo label on chunks
+    start_hippo = datetime.datetime.now()
+    hippo_labels = hippo.connected_components(chunk_prefix, n_labels, global_shape)
+    end_hippo = datetime.datetime.now()
+    hippo_duration = (end_hippo - start_hippo).total_seconds()
+    print (f'hippo.connected_components took {hippo_duration:.03f} seconds')
+
+    print (f'ndi.label on chunks found {n_labels} labels')
+    print (f'ndi.label found {ndi_full[1]} labels | hippo.connected_components found {hippo_labels} labels')
+
+    if ndi_full[1] == hippo_labels:
+        names_and_sizes_hippo = np.empty((hippo_labels+1, 4), dtype=np.int64)
+        names_and_sizes_ndi = np.empty((hippo_labels+1, 4), dtype=np.int64)
+        hippo.connected_components_canonical_names_and_sizes(all_data_path, names_and_sizes_hippo, total_shape, global_shape)
+        hippo.connected_components_canonical_names_and_sizes(ndied_full_path, names_and_sizes_ndi, total_shape, global_shape)
+
+        names_hippo = [tuple(names_and_sizes_hippo[i, :3]) for i in range(names_and_sizes_hippo.shape[0])]
+        names_ndi = [tuple(names_and_sizes_ndi[i, :3]) for i in range(names_and_sizes_ndi.shape[0])]
+        names_match = all([name in names_hippo for name in names_ndi]) and all([name in names_ndi for name in names_hippo])
+        print (f'names_match: {names_match}')
+
+        sizes_hippo_lut = {tuple(names_and_sizes_hippo[i, :3]): names_and_sizes_hippo[i, 3] for i in range(names_and_sizes_hippo.shape[0])}
+        sizes_ndi_lut = {tuple(names_and_sizes_ndi[i, :3]): names_and_sizes_ndi[i, 3] for i in range(names_and_sizes_ndi.shape[0])}
+        sizes_match = all([sizes_hippo_lut[name] == sizes_ndi_lut[name] for name in names_hippo])
+        print (f'sizes_match: {sizes_match}')
+
+
 
 def verify_diffusion(): # TODO better output names to correspond to diffusion
     # Constants
@@ -116,4 +194,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.makedirs('output')
 
-    verify_diffusion()
+    verify_connected_components()
+    #verify_diffusion()

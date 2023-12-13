@@ -2,6 +2,10 @@
 
 // This file contains main functions for testing the individual parts of the library, without having to compile to Python.
 
+void verify_connected_components(const idx3d &total_shape, const idx3d &global_shape) {
+
+}
+
 void verify_diffusion(const idx3d &total_shape, const idx3d &global_shape) {
     constexpr float SIGMA = 5.0f;
     constexpr int64_t R = (int64_t) (4.0f * SIGMA);
