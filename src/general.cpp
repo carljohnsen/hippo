@@ -9,6 +9,16 @@ float mean(const std::vector<float>& data) {
     return sum / data.size();
 }
 
+FILE* open_file_read(const std::string &path) {
+    int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
+    return fdopen(fd, "rb");
+}
+
+FILE* open_file_write(const std::string &path) {
+    int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    return fdopen(fd, "r+b");
+}
+
 // Returns the standard deviation of the given data
 float stddev(const std::vector<float>& data) {
     float m = mean(data);

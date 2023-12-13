@@ -127,8 +127,8 @@ void stage_to_host(float *__restrict__ dst, const float *__restrict__ stage, con
 
 void convert_float_to_uint8(const std::string &src, const std::string &dst, const int64_t total_flat_size) {
     int64_t chunk_size = 2048*disk_block_size;
-    FILE *file_src = open_file_read<float>(src);
-    FILE *file_dst = open_file_write<uint8_t>(dst);
+    FILE *file_src = open_file_read(src);
+    FILE *file_dst = open_file_write(dst);
     float *buffer_src = (float *) aligned_alloc(disk_block_size, chunk_size*sizeof(float));
     uint8_t *buffer_dst = (uint8_t *) aligned_alloc(disk_block_size, chunk_size*sizeof(uint8_t));
 
@@ -150,8 +150,8 @@ void convert_float_to_uint8(const std::string &src, const std::string &dst, cons
 
 void convert_uint8_to_float(const std::string &src, const std::string &dst, const int64_t total_flat_size) {
     int64_t chunk_size = 2048*disk_block_size;
-    FILE *file_src = open_file_read<uint8_t>(src);
-    FILE *file_dst = open_file_write<float>(dst);
+    FILE *file_src = open_file_read(src);
+    FILE *file_dst = open_file_write(dst);
     uint8_t *buffer_src = (uint8_t *) aligned_alloc(disk_block_size, chunk_size*sizeof(uint8_t));
     float *buffer_dst = (float *) aligned_alloc(disk_block_size, chunk_size*sizeof(float));
 
@@ -170,6 +170,9 @@ void convert_uint8_to_float(const std::string &src, const std::string &dst, cons
     fclose(file_dst);
     fclose(file_src);
 }
+
+// TODO The idea is to have three threads per device * queue, one for reading, one for processing, and one for writing. This is currently not implemented, and is left for later.
+void reader(const std::string &src, std::vector<float *> &queue, const int64_t total_) { }
 
 void diffusion(const std::string &input_file, const std::vector<float>& kernel, const std::string &output_file, const idx3d &total_shape, const idx3d &global_shape, const int64_t repititions, const bool verbose) {
     auto start = std::chrono::high_resolution_clock::now();

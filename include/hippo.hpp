@@ -38,7 +38,7 @@ typedef uint16_t voxel_type;
 constexpr idx3d local_shape = { 64, 64, 64 };
 
 // Number of devices to use
-constexpr int64_t n_devices = 2;
+constexpr int64_t n_devices = 1;
 
 // Number of streams to use per device (TODO: must be 1 for now)
 constexpr int64_t n_streams = 1;
@@ -59,26 +59,19 @@ float stddev(const std::vector<float> &data);
 // Writes the given 2D floating point array (between 0.0 and 1.0) to a PGM file
 void write_pgm(const std::string &filename, const std::vector<float> &data, const int64_t width, const int64_t height);
 
-// Templated functions
-template<typename T>
-FILE* open_file_read(const std::string &path) {
-    int fd = open(path.c_str(), O_RDONLY | O_DIRECT);
-    //int fd = open(path.c_str(), O_RDONLY);
-    return fdopen(fd, "rb");
-}
+// Opens a file for reading. The file is opened with O_DIRECT, which means that the file must be aligned to the disk block size. It is up to the caller to close the file properly.
+FILE* open_file_read(const std::string &path);
 
-template<typename T>
-FILE* open_file_write(const std::string &path) {
-    int fd = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    //int fd = open(path.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    return fdopen(fd, "r+b");
-}
+// Opens a file for writing. The file is opened with O_DIRECT, which means that the file must be aligned to the disk block size. It is up to the caller to close the file properly.
+FILE* open_file_write(const std::string &path);
+
+// Templated functions
 
 // Loads `n_elements` of a file located at `path` on disk at `offset` elements from the beginning of the file, into a vector of type `T`.
 template <typename T>
 void load_file(T *dst, const std::string &path, const int64_t total_offset, const int64_t n_elements) {
     // Open the file
-    FILE *fp = open_file_write<T>(path);
+    FILE *fp = open_file_write(path);
 
     // Calculate the aligned start and end positions
     int64_t
@@ -132,7 +125,7 @@ void load_file_strided(T *dst, const std::string &path, const idx3d &shape_total
     assert (false && "Not implemented yet :) - After the deadline!");
 
     // Open the file
-    FILE *fp = open_file_read<T>(path);
+    FILE *fp = open_file_read(path);
     fseek(fp, (range.z_start*strides_total.z + range.y_start*strides_total.y + range.x_start*strides_total.x)*sizeof(T), SEEK_SET);
     for (int64_t z = 0; z < sizes.z; z++) {
         for (int64_t y = 0; y < sizes.y; y++) {
@@ -178,7 +171,7 @@ void store_file(const std::vector<T> &data, const std::string &path, const int64
 template <typename T>
 void store_file(const T *data, const std::string &path, const int64_t offset, const int64_t n_elements) {
     // Open the file
-    FILE *fp = open_file_write<T>(path);
+    FILE *fp = open_file_write(path);
 
     // Calculate the aligned start and end positions
     int64_t
@@ -236,7 +229,7 @@ void store_file_strided(const T *data, const std::string &path, const idx3d &sha
     assert (false && "Not implemented yet :) - After the deadline!");
 
     // Open the file
-    FILE *fp = open_file_write<T>(path);
+    FILE *fp = open_file_write(path);
     fseek(fp, (range.z_start*strides_total.z + range.y_start*strides_total.y + range.x_start*strides_total.x)*sizeof(T), SEEK_SET);
     for (int64_t z = 0; z < sizes.z; z++) {
         for (int64_t y = 0; y < sizes.y; y++) {
