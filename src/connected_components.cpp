@@ -60,9 +60,9 @@ int64_t connected_components(const std::string &base_path, std::vector<int64_t> 
     std::vector<std::vector<std::tuple<int64_t, int64_t>>> index_tree = generate_adjacency_tree(chunks);
 
     std::vector<std::vector<int64_t>> renames(chunks); // Rename LUTs, one for each chunk
-    for (int64_t i = 0; i < index_tree.size(); i++) {
+    for (int64_t i = 0; i < (int64_t) index_tree.size(); i++) {
         //#pragma omp parallel for
-        for (int64_t j = 0; j < index_tree[i].size(); j++) {
+        for (int64_t j = 0; j < (int64_t) index_tree[i].size(); j++) {
             auto [l, r] = index_tree[i][j];
             // TODO Handle when all chunks doesn't have the same shape.
             int64_t last_layer = (global_shape.z-1) * global_strides.z;
