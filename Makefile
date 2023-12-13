@@ -15,7 +15,7 @@ bin/mains: obj/mains.o obj/general.o obj/diffusion.o
 	@mkdir -p bin
 	nvc++ $(CXXFLAGS) -o $@ $^
 
-bin/hippo$(PYBIND_SUFFIX): obj/pybind_top.o obj/general.o obj/diffusion.o
+bin/hippo$(PYBIND_SUFFIX): obj/pybind_top.o obj/general.o obj/diffusion.o obj/connected_components.o
 	@mkdir -p bin
 	nvc++ $(CXXFLAGS) -shared -o $@ $^
 

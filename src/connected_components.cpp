@@ -1,15 +1,19 @@
 #include "connected_components.hpp"
 
 void apply_renaming(std::vector<int64_t> &img, std::vector<int64_t> &to_rename) {
+    apply_renaming(img.data(), img.size(), to_rename);
+}
+
+void apply_renaming(int64_t *__restrict__ img, const int64_t n, const std::vector<int64_t> &to_rename) {
     #pragma omp parallel for
-    for (int64_t i = 0; i < (int64_t) img.size(); i++) {
+    for (int64_t i = 0; i < n; i++) {
         if (img[i] < (int64_t) to_rename.size()) {
             img[i] = to_rename[img[i]];
         }
     }
 }
 
-std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
+std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels, const idx3d &global_strides) {
     std::unordered_set<int64_t> labels;
     std::vector<bool> found(n_labels+1, false);
     std::vector<idx3d> names(n_labels+1, {-1, -1, -1});
@@ -17,9 +21,9 @@ std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
         labels.insert(img[i]);
         if (img[i] != 0 && !found[img[i]]) {
             int64_t
-                z = i / (Ny_global * Nx_global),
-                y = (i % (Ny_global * Nx_global)) / Nx_global,
-                x = i % Nx_global;
+                z = i / global_strides.z,
+                y = (i % global_strides.z) / global_strides.y,
+                x = (i % global_strides.y) / global_strides.x;
             found[img[i]] = true;
             names[img[i]] = {z, y, x};
         }
@@ -28,13 +32,84 @@ std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels) {
     return names;
 }
 
-std::tuple<mapping, mapping> get_mappings(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b) {
+void connected_components(const std::string &base_path, std::vector<int64_t> &n_labels, const idx3d &global_shape) {
+    // Check if the call is well-formed
+    int64_t chunks = n_labels.size();
+    assert ((chunks & (chunks - 1)) == 0 && "Chunks must be a power of 2");
+
+    // Constants
+    const idx3d
+        global_strides = { global_shape.y * global_shape.x, global_shape.x, 1 };
+
+    // Generate the paths to the different chunks
+    std::vector<std::string> paths(chunks);
+    for (int64_t i = 0; i < chunks; i++) {
+        paths[i] = base_path + std::to_string(i) + ".int64";
+    }
+
+    // Generate the adjacency tree
+    auto index_tree = generate_adjacency_tree(chunks);
+
+    std::vector<std::vector<int64_t>> renames(chunks); // Rename LUTs, one for each chunk
+    for (int64_t i = 0; i < index_tree.size(); i++) {
+        for (int64_t j = 0; j < index_tree[i].size(); j++) {
+            auto [l, r] = index_tree[i][j];
+            // TODO Handle when all chunks doesn't have the same shape.
+            int64_t last_layer = (global_shape.z-1) * global_strides.z;
+            std::vector<int64_t> a = load_file<int64_t>(paths[l], last_layer, global_strides.z);
+            std::vector<int64_t> b = load_file<int64_t>(paths[r], 0, global_strides.z);
+
+            if (i > 0) {
+                // Apply the renamings obtained from the previous layer
+                apply_renaming(a, renames[l]);
+                apply_renaming(b, renames[r]);
+            }
+            auto [rename_l, rename_r, n_new_labels] = relabel(a, n_labels[l], b, n_labels[r]);
+            n_labels[l] = n_new_labels;
+            n_labels[r] = n_new_labels;
+
+            if (i > 0) {
+                // Run through the left subtree
+                int64_t subtrees = i << 1;
+                for (int64_t k = j*2*subtrees; k < (j*2*subtrees)+subtrees; k++) {
+                    apply_renaming(renames[k], rename_l);
+                    n_labels[k] = n_new_labels;
+                }
+
+                // Run through the right subtree
+                for (int64_t k = (j*2*subtrees)+subtrees; k < (j*2*subtrees)+(2*subtrees); k++) {
+                    apply_renaming(renames[k], rename_r);
+                    n_labels[k] = n_new_labels;
+                }
+            } else {
+                renames[l] = rename_l;
+                renames[r] = rename_r;
+            }
+        }
+    }
+
+    // Apply the renaming to a new global file
+    std::string all_path = base_path + "all.int64";
+    int64_t chunk_size = global_shape.z * global_shape.y * global_shape.x;
+    FILE *all_file = open_file_write(all_path);
+    // TODO handle chunks % disk_block_size != 0
+    int64_t *chunk = (int64_t *) aligned_alloc(disk_block_size, chunk_size * sizeof(int64_t));
+    for (int64_t i = 0; i < chunks; i++) {
+        load_file(chunk, paths[i], 0, chunk_size);
+        apply_renaming(chunk, chunk_size, renames[i]);
+        store_partial(chunk, all_file, 0, chunk_size);
+    }
+    free(chunk);
+    fclose(all_file);
+}
+
+std::tuple<mapping, mapping> get_mappings(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b, const idx3d &global_shape) {
     mapping mapping_a(n_labels_a+1);
     mapping mapping_b(n_labels_b+1);
 
-    for (int64_t y = 0; y < Ny_global; y++) {
-        for (int64_t x = 0; x < Nx_global; x++) {
-            int64_t i = y * Nx_global + x;
+    for (int64_t y = 0; y < global_shape.y; y++) {
+        for (int64_t x = 0; x < global_shape.x; x++) {
+            int64_t i = (y * global_shape.x) + x;
             if (a[i] != 0 && b[i] != 0) {
                 mapping_a[a[i]].insert(b[i]);
                 mapping_b[b[i]].insert(a[i]);
@@ -52,6 +127,21 @@ std::vector<int64_t> get_sizes(std::vector<int64_t> &img, int64_t n_labels) {
     }
 
     return sizes;
+}
+
+std::vector<std::vector<std::tuple<int64_t, int64_t>>> generate_adjacency_tree(const int64_t chunks) {
+    std::vector<std::vector<std::tuple<int64_t, int64_t>>> tree;
+    int64_t log_chunks = std::ceil(std::log2(chunks));
+    for (int64_t layer = 0; layer < log_chunks; layer++) {
+        int64_t n_elements = chunks >> layer; // chunks / 2^layer
+        int64_t i = 1 << layer; // 1 * 2^layer
+        std::vector<std::tuple<int64_t, int64_t>> indices;
+        for (int64_t j = i-1; j < i*n_elements*2; j += i*2) {
+            indices.push_back({j, j+i});
+        }
+        tree.push_back(indices);
+    }
+    return tree;
 }
 
 std::vector<idx3d> merge_canonical_names(std::vector<idx3d> &names_a, std::vector<idx3d> &names_b) {
