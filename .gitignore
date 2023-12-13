@@ -3,3 +3,6 @@ output/
 obj/
 bin/
 **/__pycache__/
+
+# Nvidia intermediate files
+*.tsm
