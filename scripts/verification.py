@@ -15,10 +15,19 @@ import numpy as np
 import os
 import scipy.ndimage as ndi
 
+def ndi_label_chunk(input_path, global_shape, chunk_prefix, i):
+    with open(input_path, 'rb') as f:
+        chunk_size = np.prod(global_shape)
+        start = i * chunk_size
+        chunk = np.fromfile(f, dtype=np.uint8, offset=start, count=chunk_size).reshape(global_shape)
+        chunk_labeled, chunk_n_labels = ndi.label(chunk, output=np.int64)
+        chunk_labeled.tofile(f'{chunk_prefix}{i}.int64')
+        return chunk_n_labels
+
 def verify_connected_components():
     # Constants
     total_shape = (512, 512, 512)
-    global_shape = (64, 512, 512)
+    global_shape = (256, 512, 512)
     # Assert that total_shape is divisible by global_shape
     assert total_shape[0] % global_shape[0] == 0
     n_chunks = total_shape[0] // global_shape[0]
@@ -51,15 +60,10 @@ def verify_connected_components():
 
     # Run the ndi label on chunks
     start_ndi_chunks = datetime.datetime.now()
-    input_img = np.fromfile(input_data_path, dtype=np.uint8).reshape(total_shape)
-    n_labels = np.empty(n_chunks, dtype=np.int64)
-    for i in range(n_chunks):
-        start = i * global_shape[0]
-        end = (i + 1) * global_shape[0]
-        chunk = input_img[start:end, :, :]
-        chunk_labeled, chunk_n_labels = ndi.label(chunk, output=np.int64)
-        chunk_labeled.tofile(f'{chunk_prefix}{i}.int64')
-        n_labels[i] = chunk_n_labels
+
+    with Pool(n_chunks) as pool:
+        n_labels = pool.starmap(ndi_label_chunk, [(input_data_path, global_shape, chunk_prefix, i) for i in range(n_chunks)])
+
     end_ndi_chunks = datetime.datetime.now()
     ndi_chunks_duration = (end_ndi_chunks - start_ndi_chunks).total_seconds()
     print (f'ndi.label on chunks took {ndi_chunks_duration:.03f} seconds')
