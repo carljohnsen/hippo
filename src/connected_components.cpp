@@ -125,15 +125,41 @@ int64_t connected_components(const std::string &base_path, std::vector<int64_t> 
 }
 
 std::tuple<mapping, mapping> get_mappings(const std::vector<int64_t> &a, const int64_t n_labels_a, const std::vector<int64_t> &b, const int64_t n_labels_b, const idx3d &global_shape) {
+    std::vector<mapping> mappings_a;
+    std::vector<mapping> mappings_b;
+
     mapping mapping_a(n_labels_a+1);
     mapping mapping_b(n_labels_b+1);
 
-    for (int64_t y = 0; y < global_shape.y; y++) {
-        for (int64_t x = 0; x < global_shape.x; x++) {
-            int64_t i = (y * global_shape.x) + x;
-            if (a[i] != 0 && b[i] != 0) {
-                mapping_a[a[i]].insert(b[i]);
-                mapping_b[b[i]].insert(a[i]);
+    #pragma omp parallel num_threads(4)
+    {
+        int64_t n_threads = omp_get_num_threads();
+
+        #pragma omp single
+        {
+            mappings_a.resize(n_threads, mapping(n_labels_a+1));
+            mappings_b.resize(n_threads, mapping(n_labels_b+1));
+        }
+
+        #pragma omp for schedule(static) collapse(2)
+        for (int64_t y = 0; y < global_shape.y; y++) {
+            for (int64_t x = 0; x < global_shape.x; x++) {
+                int64_t i = (y * global_shape.x) + x;
+                if (a[i] != 0 && b[i] != 0) {
+                    mappings_a[omp_get_thread_num()][a[i]].insert(b[i]);
+                    mappings_b[omp_get_thread_num()][b[i]].insert(a[i]);
+                }
+            }
+        }
+
+        for (int64_t i = 0; i < n_threads; i++) {
+            #pragma omp for schedule(static)
+            for (int64_t j = 1; j < n_labels_a+1; j++) {
+                mapping_a[j].insert(mappings_a[i][j].begin(), mappings_a[i][j].end());
+            }
+            #pragma omp for schedule(static)
+            for (int64_t j = 1; j < n_labels_b+1; j++) {
+                mapping_b[j].insert(mappings_b[i][j].begin(), mappings_b[i][j].end());
             }
         }
     }
