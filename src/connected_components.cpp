@@ -13,26 +13,35 @@ void apply_renaming(int64_t *__restrict__ img, const int64_t n, const std::vecto
     }
 }
 
-std::vector<idx3d> canonical_name(std::vector<int64_t> &img, int64_t n_labels, const idx3d &global_strides) {
-    std::unordered_set<int64_t> labels;
+void canonical_names_and_size(const std::string &path, int64_t *__restrict__ out, const int64_t n_labels, const idx3d &total_shape, const idx3d &global_shape) {
     std::vector<bool> found(n_labels+1, false);
-    std::vector<idx3d> names(n_labels+1, {-1, -1, -1});
-    for (int64_t i = 0; i < (int64_t) img.size(); i++) {
-        labels.insert(img[i]);
-        if (img[i] != 0 && !found[img[i]]) {
-            int64_t
-                z = i / global_strides.z,
-                y = (i % global_strides.z) / global_strides.y,
-                x = (i % global_strides.y) / global_strides.x;
-            found[img[i]] = true;
-            names[img[i]] = {z, y, x};
+    const idx3d strides = { global_shape.y * global_shape.x, global_shape.x, 1 };
+    int64_t n_chunks = total_shape.z / global_shape.z; // Assuming that they are divisible
+    FILE *file = open_file_read(path);
+    int64_t chunk_size = global_shape.z * global_shape.y * global_shape.x;
+    int64_t *img = (int64_t *) aligned_alloc(disk_block_size, chunk_size * sizeof(int64_t));
+    for (int64_t chunk = 0; chunk < n_chunks; chunk++) {
+        load_partial(img, file, chunk*chunk_size, chunk_size);
+        for (int64_t i = 0; i < chunk_size; i++) {
+            int64_t label = img[i];
+            if (!found[label]) {
+                int64_t
+                    z = (i / strides.z) + (chunk * global_shape.z),
+                    y = (i % strides.z) / strides.y,
+                    x = (i % strides.y) / strides.x;
+                found[label] = true;
+                out[(4*label)+0] = z;
+                out[(4*label)+1] = y;
+                out[(4*label)+2] = x;
+            }
+            out[(4*label)+3] += 1;
         }
     }
-
-    return names;
+    free(img);
+    fclose(file);
 }
 
-void connected_components(const std::string &base_path, std::vector<int64_t> &n_labels, const idx3d &global_shape) {
+int64_t connected_components(const std::string &base_path, std::vector<int64_t> &n_labels, const idx3d &global_shape, const bool verbose) {
     // Check if the call is well-formed
     int64_t chunks = n_labels.size();
     assert ((chunks & (chunks - 1)) == 0 && "Chunks must be a power of 2");
@@ -48,10 +57,11 @@ void connected_components(const std::string &base_path, std::vector<int64_t> &n_
     }
 
     // Generate the adjacency tree
-    auto index_tree = generate_adjacency_tree(chunks);
+    std::vector<std::vector<std::tuple<int64_t, int64_t>>> index_tree = generate_adjacency_tree(chunks);
 
     std::vector<std::vector<int64_t>> renames(chunks); // Rename LUTs, one for each chunk
     for (int64_t i = 0; i < index_tree.size(); i++) {
+        //#pragma omp parallel for
         for (int64_t j = 0; j < index_tree[i].size(); j++) {
             auto [l, r] = index_tree[i][j];
             // TODO Handle when all chunks doesn't have the same shape.
@@ -64,7 +74,7 @@ void connected_components(const std::string &base_path, std::vector<int64_t> &n_
                 apply_renaming(a, renames[l]);
                 apply_renaming(b, renames[r]);
             }
-            auto [rename_l, rename_r, n_new_labels] = relabel(a, n_labels[l], b, n_labels[r]);
+            auto [rename_l, rename_r, n_new_labels] = relabel(a, n_labels[l], b, n_labels[r], global_shape, verbose);
             n_labels[l] = n_new_labels;
             n_labels[r] = n_new_labels;
 
@@ -97,10 +107,12 @@ void connected_components(const std::string &base_path, std::vector<int64_t> &n_
     for (int64_t i = 0; i < chunks; i++) {
         load_file(chunk, paths[i], 0, chunk_size);
         apply_renaming(chunk, chunk_size, renames[i]);
-        store_partial(chunk, all_file, 0, chunk_size);
+        store_partial(chunk, all_file, i*chunk_size, chunk_size);
     }
     free(chunk);
     fclose(all_file);
+
+    return n_labels[0];
 }
 
 std::tuple<mapping, mapping> get_mappings(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b, const idx3d &global_shape) {
@@ -130,16 +142,17 @@ std::vector<int64_t> get_sizes(std::vector<int64_t> &img, int64_t n_labels) {
 }
 
 std::vector<std::vector<std::tuple<int64_t, int64_t>>> generate_adjacency_tree(const int64_t chunks) {
-    std::vector<std::vector<std::tuple<int64_t, int64_t>>> tree;
     int64_t log_chunks = std::ceil(std::log2(chunks));
+    std::vector<std::vector<std::tuple<int64_t, int64_t>>> tree(log_chunks);
     for (int64_t layer = 0; layer < log_chunks; layer++) {
-        int64_t n_elements = chunks >> layer; // chunks / 2^layer
+        int64_t n_elements = chunks >> (layer+1); // chunks / 2^layer
         int64_t i = 1 << layer; // 1 * 2^layer
         std::vector<std::tuple<int64_t, int64_t>> indices;
         for (int64_t j = i-1; j < i*n_elements*2; j += i*2) {
-            indices.push_back({j, j+i});
+            indices.push_back({j, j+1});
+
         }
-        tree.push_back(indices);
+        tree[layer] = indices;
     }
     return tree;
 }
@@ -300,9 +313,9 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
     return mapped_a.size() + unmapped_a.size() + unmapped_b.size();
 }
 
-std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b) {
+std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b, const idx3d &global_shape, const bool verbose) {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [mapping_a, mapping_b] = get_mappings(a, n_labels_a, b, n_labels_b);
+    auto [mapping_a, mapping_b] = get_mappings(a, n_labels_a, b, n_labels_b, global_shape);
     auto mappings_end = std::chrono::high_resolution_clock::now();
     std::vector<int64_t> empty_vec;
     auto to_rename_a = merge_labels(mapping_a, mapping_b, empty_vec);
@@ -324,12 +337,14 @@ std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vec
         elapsed_rename_b = rename_b_end - rename_a_end,
         elapsed_recount = recount_end - rename_b_end;
 
-    std::cout << "get_mappings: " << elapsed_get_mappings.count() << " s" << std::endl;
-    std::cout << "merge_a: " << elapsed_merge_a.count() << " s" << std::endl;
-    std::cout << "merge_b: " << elapsed_merge_b.count() << " s" << std::endl;
-    std::cout << "rename_a: " << elapsed_rename_a.count() << " s" << std::endl;
-    std::cout << "rename_b: " << elapsed_rename_b.count() << " s" << std::endl;
-    std::cout << "recount: " << elapsed_recount.count() << " s" << std::endl;
+    if (verbose) {
+        std::cout << "get_mappings: " << elapsed_get_mappings.count() << " s" << std::endl;
+        std::cout << "merge_a: " << elapsed_merge_a.count() << " s" << std::endl;
+        std::cout << "merge_b: " << elapsed_merge_b.count() << " s" << std::endl;
+        std::cout << "rename_a: " << elapsed_rename_a.count() << " s" << std::endl;
+        std::cout << "rename_b: " << elapsed_rename_b.count() << " s" << std::endl;
+        std::cout << "recount: " << elapsed_recount.count() << " s" << std::endl;
+    }
 
     return { to_rename_a, to_rename_b, n_new_labels };
 }
