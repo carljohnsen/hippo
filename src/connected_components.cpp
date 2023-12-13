@@ -115,7 +115,7 @@ int64_t connected_components(const std::string &base_path, std::vector<int64_t> 
     return n_labels[0];
 }
 
-std::tuple<mapping, mapping> get_mappings(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b, const idx3d &global_shape) {
+std::tuple<mapping, mapping> get_mappings(const std::vector<int64_t> &a, const int64_t n_labels_a, const std::vector<int64_t> &b, const int64_t n_labels_b, const idx3d &global_shape) {
     mapping mapping_a(n_labels_a+1);
     mapping mapping_b(n_labels_b+1);
 
@@ -170,7 +170,7 @@ std::vector<idx3d> merge_canonical_names(std::vector<idx3d> &names_a, std::vecto
     return names;
 }
 
-std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64_t> &to_rename_b) {
+std::vector<int64_t> merge_labels(mapping &mapping_a, const mapping &mapping_b, const std::vector<int64_t> &to_rename_b) {
     std::list<int64_t> to_check;
     std::vector<int64_t> to_rename_a(mapping_a.size());
     to_rename_a[0] = 0;
@@ -208,7 +208,7 @@ std::vector<int64_t> merge_labels(mapping &mapping_a, mapping &mapping_b, std::v
     return to_rename_a;
 }
 
-void print_canonical_names(std::vector<idx3d> &names_a) {
+void print_canonical_names(const std::vector<idx3d> &names_a) {
     std::cout << "Canonical names:" << std::endl;
     for (int64_t i = 1; i < (int64_t) names_a.size(); i++) {
         std::cout << i << ": " << names_a[i].z << " " << names_a[i].y << " " << names_a[i].x << std::endl;
@@ -216,7 +216,7 @@ void print_canonical_names(std::vector<idx3d> &names_a) {
     std::cout << "----------------" << std::endl;
 }
 
-void print_mapping(mapping &mapping_) {
+void print_mapping(const mapping &mapping_) {
     std::cout << "Mapping:" << std::endl;
     for (int64_t i = 1; i < (int64_t) mapping_.size(); i++) {
         std::cout << i << ": { ";
@@ -228,7 +228,7 @@ void print_mapping(mapping &mapping_) {
     std::cout << "----------------" << std::endl;
 }
 
-void print_rename(std::vector<int64_t> &to_rename) {
+void print_rename(const std::vector<int64_t> &to_rename) {
     std::cout << "Rename:" << std::endl;
     for (int64_t i = 1; i < (int64_t) to_rename.size(); i++) {
         std::cout << i << ": " << to_rename[i] << std::endl;
@@ -237,7 +237,7 @@ void print_rename(std::vector<int64_t> &to_rename) {
 }
 
 // Ensures that the labels in the renaming LUTs are consecutive
-int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64_t> &to_rename_a, std::vector<int64_t> &to_rename_b) {
+int64_t recount_labels(const mapping &mapping_a, mapping &mapping_b, std::vector<int64_t> &to_rename_a, std::vector<int64_t> &to_rename_b) {
     // We assume that mapping includes 0
     std::vector<int64_t> mapped_a, unmapped_a, unmapped_b;
     int64_t popped_a = 0, popped_b = 0;
@@ -313,7 +313,7 @@ int64_t recount_labels(mapping &mapping_a, mapping &mapping_b, std::vector<int64
     return mapped_a.size() + unmapped_a.size() + unmapped_b.size();
 }
 
-std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vector<int64_t> &a, int64_t n_labels_a, std::vector<int64_t> &b, int64_t n_labels_b, const idx3d &global_shape, const bool verbose) {
+std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(const std::vector<int64_t> &a, const int64_t n_labels_a, const std::vector<int64_t> &b, const int64_t n_labels_b, const idx3d &global_shape, const bool verbose) {
     auto start = std::chrono::high_resolution_clock::now();
     auto [mapping_a, mapping_b] = get_mappings(a, n_labels_a, b, n_labels_b, global_shape);
     auto mappings_end = std::chrono::high_resolution_clock::now();
@@ -349,7 +349,7 @@ std::tuple<std::vector<int64_t>, std::vector<int64_t>, int64_t> relabel(std::vec
     return { to_rename_a, to_rename_b, n_new_labels };
 }
 
-void rename_mapping(mapping &mapping_a, std::vector<int64_t> &to_rename_other) {
+void rename_mapping(mapping &mapping_a, const std::vector<int64_t> &to_rename_other) {
     for (int64_t i = 1; i < (int64_t) mapping_a.size(); i++) {
         auto entries = mapping_a[i];
         std::unordered_set<int64_t> new_entries;
