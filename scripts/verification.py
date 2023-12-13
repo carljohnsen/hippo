@@ -46,7 +46,7 @@ def verify_connected_components():
 
     # Generate the input data
     generate_data.generate_input_img(input_data_path, total_shape)
-    helpers.plot_middle_planes(input_data_path, np.uint8, input_img_path)
+    helpers.plot_middle_planes(input_data_path, np.uint8, input_img_path, total_shape)
     input_img = np.fromfile(input_data_path, dtype=np.uint8).reshape(total_shape)
 
     # Run the ndi label
