@@ -19,16 +19,26 @@ def verify_diffusion(): # TODO better output names to correspond to diffusion
     sigma = 5.0
     r = 4.0 * sigma
     padding = int(2*r)
-    total_shape = (512, 512, 512)
+    total_shape = (256, 256, 256)
     planes_per_gb = int(1024**3 / (total_shape[1] * total_shape[2] * np.dtype(np.float32).itemsize))
-    #global_shape = (planes_per_gb, total_shape[1], total_shape[2])
-    global_shape = (total_shape[0]+padding, total_shape[1], total_shape[2])
+    global_shape = (planes_per_gb, total_shape[1], total_shape[2])
+    #global_shape = (total_shape[0]+padding, total_shape[1], total_shape[2])
     repititions = 1
 
-    # For 1024**3 and planes_per_gb * 1024**2
+    # 1 GPU for 1024**3 and planes_per_gb * 1024**2
     #ndi.gaussian_filter took 264.315 seconds
     #hippo.diffusion took 20.742 seconds
     #hippo.diffusion was 12.74 times faster than ndi.gaussian_filter
+    #Average absolute difference: 9.313225746154785e-10
+    #Maximum absolute difference: 1
+    #Minimum absolute difference: 0
+    #Standard deviation of absolute difference: 3.0517578110789142e-05
+
+    # TODO investigate why multiple GPUs are slower.
+    # 2 GPU for 1024**3 and planes_per_gb * 1024**2
+    #ndi.gaussian_filter took 199.082 seconds
+    #hippo.diffusion took 30.037 seconds
+    #hippo.diffusion was 6.63 times faster than ndi.gaussian_filter
     #Average absolute difference: 9.313225746154785e-10
     #Maximum absolute difference: 1
     #Minimum absolute difference: 0
