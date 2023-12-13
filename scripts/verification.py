@@ -26,8 +26,8 @@ def ndi_label_chunk(input_path, global_shape, chunk_prefix, i):
 
 def verify_connected_components():
     # Constants
-    total_shape = (512, 512, 512)
-    global_shape = (256, 512, 512)
+    total_shape = (1024, 1024, 1024)
+    global_shape = (128, 1024, 1024)
     # Assert that total_shape is divisible by global_shape
     assert total_shape[0] % global_shape[0] == 0
     n_chunks = total_shape[0] // global_shape[0]
@@ -57,6 +57,7 @@ def verify_connected_components():
     end_ndi_full = datetime.datetime.now()
     ndi_full_duration = (end_ndi_full - start_ndi_full).total_seconds()
     print (f'ndi.label took {ndi_full_duration:.03f} seconds')
+    print (f'ndi.label found {ndi_full[1]} labels')
 
     # Run the ndi label on chunks
     start_ndi_chunks = datetime.datetime.now()
@@ -67,16 +68,21 @@ def verify_connected_components():
     end_ndi_chunks = datetime.datetime.now()
     ndi_chunks_duration = (end_ndi_chunks - start_ndi_chunks).total_seconds()
     print (f'ndi.label on chunks took {ndi_chunks_duration:.03f} seconds')
+    print (f'ndi.label on chunks found {n_labels} labels')
 
     # Run the hippo label on chunks
     start_hippo = datetime.datetime.now()
-    hippo_labels = hippo.connected_components(chunk_prefix, n_labels, global_shape)
+    hippo_labels = hippo.connected_components(chunk_prefix, n_labels, global_shape, verbose=True)
     end_hippo = datetime.datetime.now()
     hippo_duration = (end_hippo - start_hippo).total_seconds()
     print (f'hippo.connected_components took {hippo_duration:.03f} seconds')
+    print (f'hippo.connected_components found {hippo_labels} labels')
+    combined_duration = hippo_duration + ndi_chunks_duration
 
-    print (f'ndi.label on chunks found {n_labels} labels')
-    print (f'ndi.label found {ndi_full[1]} labels | hippo.connected_components found {hippo_labels} labels')
+    print (f'##########')
+    print (f'hippo + chunked ndi.label took {combined_duration:.03f} seconds ({ndi_full_duration / combined_duration:.02f} times faster than ndi.label)')
+    print (f'##########')
+
 
     if ndi_full[1] == hippo_labels:
         names_and_sizes_hippo = np.empty((hippo_labels+1, 4), dtype=np.int64)
@@ -93,8 +99,6 @@ def verify_connected_components():
         sizes_ndi_lut = {tuple(names_and_sizes_ndi[i, :3]): names_and_sizes_ndi[i, 3] for i in range(names_and_sizes_ndi.shape[0])}
         sizes_match = all([sizes_hippo_lut[name] == sizes_ndi_lut[name] for name in names_hippo])
         print (f'sizes_match: {sizes_match}')
-
-
 
 def verify_diffusion(): # TODO better output names to correspond to diffusion
     # Constants

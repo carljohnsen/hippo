@@ -21,9 +21,18 @@ void canonical_names_and_size(const std::string &path, int64_t *__restrict__ out
     int64_t chunk_size = global_shape.z * global_shape.y * global_shape.x;
     int64_t *img = (int64_t *) aligned_alloc(disk_block_size, chunk_size * sizeof(int64_t));
     for (int64_t chunk = 0; chunk < n_chunks; chunk++) {
+        std::cout << "Chunk " << chunk << " / " << n_chunks << std::endl;
+        auto start = std::chrono::high_resolution_clock::now();
         load_partial(img, file, chunk*chunk_size, chunk_size);
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+        std::cout << "load_partial: " << (chunk_size*sizeof(int64_t)) / elapsed.count() / 1e9 << " GB/s" << std::endl;
         for (int64_t i = 0; i < chunk_size; i++) {
             int64_t label = img[i];
+            if (label > n_labels || label < 0) {
+                std::cout << "Label " << label << " in chunk " << chunk << " at index " << i <<" is outside of bounds 0:" << n_labels << std::endl;
+                continue;
+            }
             if (!found[label]) {
                 int64_t
                     z = (i / strides.z) + (chunk * global_shape.z),
