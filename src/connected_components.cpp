@@ -5,7 +5,7 @@ void apply_renaming(std::vector<int64_t> &img, std::vector<int64_t> &to_rename) 
 }
 
 void apply_renaming(int64_t *__restrict__ img, const int64_t n, const std::vector<int64_t> &to_rename) {
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(static)
     for (int64_t i = 0; i < n; i++) {
         if (img[i] < (int64_t) to_rename.size()) {
             img[i] = to_rename[img[i]];
@@ -51,6 +51,7 @@ void canonical_names_and_size(const std::string &path, int64_t *__restrict__ out
 }
 
 int64_t connected_components(const std::string &base_path, std::vector<int64_t> &n_labels, const idx3d &global_shape, const bool verbose) {
+    auto cc_start = std::chrono::high_resolution_clock::now();
     // Check if the call is well-formed
     int64_t chunks = n_labels.size();
     assert ((chunks & (chunks - 1)) == 0 && "Chunks must be a power of 2");
@@ -107,6 +108,14 @@ int64_t connected_components(const std::string &base_path, std::vector<int64_t> 
         }
     }
 
+    auto cc_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_cc = cc_end - cc_start;
+    if (verbose) {
+        std::cout << "connected_components lut building: " << elapsed_cc.count() << " s" << std::endl;
+    }
+
+    auto cc_app_start = std::chrono::high_resolution_clock::now();
+
     // Apply the renaming to a new global file
     std::string all_path = base_path + "all.int64";
     int64_t chunk_size = global_shape.z * global_shape.y * global_shape.x;
@@ -114,12 +123,38 @@ int64_t connected_components(const std::string &base_path, std::vector<int64_t> 
     // TODO handle chunks % disk_block_size != 0
     int64_t *chunk = (int64_t *) aligned_alloc(disk_block_size, chunk_size * sizeof(int64_t));
     for (int64_t i = 0; i < chunks; i++) {
+        auto load_start = std::chrono::high_resolution_clock::now();
         load_file(chunk, paths[i], 0, chunk_size);
+        auto load_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_load = load_end - load_start;
+        if (verbose) {
+            std::cout << "load_file: " << (chunk_size*sizeof(int64_t)) / elapsed_load.count() / 1e9 << " GB/s" << std::endl;
+        }
+
+        auto apply_start = std::chrono::high_resolution_clock::now();
         apply_renaming(chunk, chunk_size, renames[i]);
+        auto apply_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_apply = apply_end - apply_start;
+        if (verbose) {
+            std::cout << "apply_renaming: " << (chunk_size*sizeof(int64_t)) / elapsed_apply.count() / 1e9 << " GB/s" << std::endl;
+        }
+
+        auto store_start = std::chrono::high_resolution_clock::now();
         store_partial(chunk, all_file, i*chunk_size, chunk_size);
+        auto store_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_store = store_end - store_start;
+        if (verbose) {
+            std::cout << "store_partial: " << (chunk_size*sizeof(int64_t)) / elapsed_store.count() / 1e9 << " GB/s" << std::endl;
+        }
     }
     free(chunk);
     fclose(all_file);
+
+    auto cc_app_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed_cc_app = cc_app_end - cc_app_start;
+    if (verbose) {
+        std::cout << "connected_components lut application: " << elapsed_cc_app.count() << " s" << std::endl;
+    }
 
     return n_labels[0];
 }
@@ -131,7 +166,7 @@ std::tuple<mapping, mapping> get_mappings(const std::vector<int64_t> &a, const i
     mapping mapping_a(n_labels_a+1);
     mapping mapping_b(n_labels_b+1);
 
-    #pragma omp parallel num_threads(4)
+    #pragma omp parallel num_threads(8)
     {
         int64_t n_threads = omp_get_num_threads();
 
