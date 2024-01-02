@@ -1,5 +1,5 @@
-# hippo-ischpc24
-Artefact repository for HIPPO paper submission for ISC High Performance 2024
+# hippo
+Artefact repository for HIPPO paper submission
 
 TODO define hierachy shapes: total, global and local.
 
