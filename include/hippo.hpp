@@ -67,6 +67,13 @@ FILE* open_file_write(const std::string &path);
 
 // Templated functions
 
+template <typename T>
+void load_file_no_alloc(T *dst, FILE *fp, const int64_t offset, const int64_t n_elements) {
+    fseek(fp, offset*sizeof(T), SEEK_SET);
+    int64_t n = fread((char *) dst, sizeof(T), n_elements, fp);
+    assert(n == n_elements && "Failed to read all elements");
+}
+
 // Loads `n_elements` of a file located at `path` on disk at `offset` elements from the beginning of the file, into a vector of type `T`.
 template <typename T>
 void load_file(T *dst, const std::string &path, const int64_t total_offset, const int64_t n_elements) {
@@ -75,26 +82,30 @@ void load_file(T *dst, const std::string &path, const int64_t total_offset, cons
 
     // Calculate the aligned start and end positions
     int64_t
+        disk_block_size_elements = disk_block_size / sizeof(T),
         start_pos = total_offset*sizeof(T),
         end_pos = (total_offset+n_elements)*sizeof(T),
         aligned_start = (start_pos / disk_block_size) * disk_block_size,
         aligned_end = ((end_pos + disk_block_size - 1) / disk_block_size) * disk_block_size,
         aligned_size = aligned_end - aligned_start,
-        aligned_n_elements = aligned_size / sizeof(T);
+        aligned_n_elements = aligned_size / sizeof(T),
+        aligned_offset = aligned_start / sizeof(T);
 
-    // Allocate a buffer for the write
-    T *buffer = (T *) aligned_alloc(disk_block_size, aligned_size);
+    if (start_pos % disk_block_size == 0 && end_pos % disk_block_size == 0 && n_elements % disk_block_size_elements == 0 && (int64_t) dst % disk_block_size == 0 && total_offset % disk_block_size_elements == 0) {
+        load_file_no_alloc(dst, fp, total_offset, n_elements);
+    } else {
+        // Allocate a buffer for the write
+        T *buffer = (T *) aligned_alloc(disk_block_size, aligned_size);
 
-    // Read the buffer from disk
-    fseek(fp, aligned_start, SEEK_SET);
-    int64_t n = fread((char *) buffer, sizeof(T), aligned_n_elements, fp);
-    assert (n == aligned_n_elements && "Failed to read all elements");
+        // Read the buffer from disk
+        load_file_no_alloc(buffer, fp, aligned_offset, aligned_n_elements);
 
-    // Copy the data to the destination
-    memcpy((char *) dst, (char *) buffer + start_pos - aligned_start, n_elements*sizeof(T));
+        // Copy the data to the destination
+        memcpy((char *) dst, (char *) buffer + start_pos - aligned_start, n_elements*sizeof(T));
 
-    // Free the buffer and close the file
-    free(buffer);
+        // Free the buffer and close the file
+        free(buffer);
+    }
     fclose(fp);
 }
 
